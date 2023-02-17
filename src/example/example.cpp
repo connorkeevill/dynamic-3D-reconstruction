@@ -71,7 +71,7 @@ int main(int argc, char const *argv[]) {
       std::cout << tracker.GetCurrentPose() << std::endl;
 
       cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
-      cv::imshow("RGB", virtual_rgb);
+//      cv::imshow("RGB", virtual_rgb);
       int k = cv::waitKey(1);
       if (k == 27) {
         break;
