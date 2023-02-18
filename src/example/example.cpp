@@ -72,9 +72,9 @@ int main(int argc, char const *argv[]) {
 
       cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
 //      int k = cv::waitKey(1);
-      if (k == 27) {
-        break;
-      }
+//      if (k == 27) {
+//        break;
+//      }
     }
   } else {
     std::cerr << "Error while opening file associated.txt" << std::endl;
