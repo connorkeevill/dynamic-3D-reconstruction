@@ -21,5 +21,5 @@ RUN mkdir refusion
 COPY . ./refusion
 RUN catkin build refusion
 
-WORKDIR /app
+WORKDIR /app/refusion
 CMD ["python", "run.py"]
