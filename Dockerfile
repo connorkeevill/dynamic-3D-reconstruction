@@ -20,3 +20,6 @@ RUN git clone https://github.com/ros/catkin.git
 RUN mkdir refusion
 COPY . ./refusion
 RUN catkin build refusion
+
+WORKDIR /app
+CMD ["python", "run.py"]
