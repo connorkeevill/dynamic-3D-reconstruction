@@ -40,6 +40,9 @@ namespace refusion {
 
 		/** Initial regularization term of Levenberg-Marquardt **/
 		float regularization;
+
+		/** Whether to remove dynamic elements from the model **/
+		bool remove_dynamics = true;  // Default to remove dynamics
 	};
 
 /**

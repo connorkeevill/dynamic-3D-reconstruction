@@ -337,33 +337,34 @@ namespace refusion {
 			Eigen::Matrix4d prev_pose = pose_;
 			TrackCamera(image, mask, true);
 
-			cv::Mat cvmask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (mask[i * image.sensor_.cols + j]) {
-						cvmask.at<uchar>(i, j) = 255;
-					}
-					else {
-						cvmask.at<uchar>(i, j) = 0;
+			if(options_.remove_dynamics) {
+				// Remove dynamic objects
+				// (1) Convert mask to cv::Mat
+				cv::Mat cvmask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+				for (int i = 0; i < image.sensor_.rows; i++) {
+					for (int j = 0; j < image.sensor_.cols; j++) {
+						if (mask[i * image.sensor_.cols + j]) {
+							cvmask.at<uchar>(i, j) = 255;
+						}
+						else {
+							cvmask.at<uchar>(i, j) = 0;
+						}
 					}
 				}
-			}
 
-			ApplyMaskFlood(depth, cvmask, 0.007);
+				ApplyMaskFlood(depth, cvmask, 0.007);
 
-			int dilation_size = 10;
-			cv::Mat dilation_kernel = cv::getStructuringElement(
-					cv::MORPH_ELLIPSE, cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
-					cv::Point(dilation_size, dilation_size));
-			cv::dilate(cvmask, cvmask, dilation_kernel);
-
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (cvmask.at<uchar>(i, j) > 0) {
-						mask[i * image.sensor_.cols + j] = true;
-					}
-					else {
-						mask[i * image.sensor_.cols + j] = false;
+				int dilation_size = 10;
+				cv::Mat dilation_kernel = cv::getStructuringElement(
+						cv::MORPH_ELLIPSE, cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
+						cv::Point(dilation_size, dilation_size));
+				cv::Mat dilated_mask;
+				cv::dilate(cvmask, dilated_mask, dilation_kernel);
+				for (int i = 0; i < image.sensor_.rows; i++) {
+					for (int j = 0; j < image.sensor_.cols; j++) {
+						if (dilated_mask.at<uchar>(i, j) > 0) {
+							mask[i * image.sensor_.cols + j] = false;
+						}
 					}
 				}
 			}

@@ -38,6 +38,7 @@ int main(int argc, char const *argv[])
 	tracker_options.min_increment = 0.0001;
 	tracker_options.regularization = 0.002;
 	tracker_options.huber_constant = 0.02;
+	tracker_options.remove_dynamics = false;
 
 	// Intrinsic parameters of the sensor
 	refusion::RgbdSensor sensor;
