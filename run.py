@@ -9,6 +9,6 @@ if __name__ == "__main__":
     for directory in directories:
         print("-----------------------------------------------------------")
         print(f"Running on test dataset: {directory}")
-        os.system(f"/app/catkin_ws/src/refusion/bin/refusion_example {join(path, directory)}")
+        os.system(f"/app/bin/refusion_example {join(path, directory)}")
 
     print("Complete")

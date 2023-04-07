@@ -3,7 +3,7 @@ project(refusion)
 
 add_compile_options(-std=c++11)
 
-find_package(catkin REQUIRED)
+#find_package(catkin REQUIRED)
 find_package(CUDA REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -11,16 +11,11 @@ find_package(Eigen3 REQUIRED)
 set(CUDA_SEPARABLE_COMPILATION ON)
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--std=c++11;-arch=sm_50;-O3)
 
-catkin_package(
-  INCLUDE_DIRS src
-  LIBRARIES refusion
-)
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 include_directories(
 src
-${catkin_INCLUDE_DIRS}
+#${catkin_INCLUDE_DIRS}
 ${CUDA_INCLUDE_DIRS}
 ${OpenCV_INCLUDE_DIRS}
 ${EIGEN3_INCLUDE_DIRS}
