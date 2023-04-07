@@ -8,18 +8,19 @@
 
 namespace refusion {
 
-namespace tsdfvh {
+	namespace tsdfvh {
 
 /**
  * @brief      Struct that represents a hash entry
  */
-struct HashEntry {
-  /** Entry position (lower left corner of the voxel block) */
-  int3 position;
-  /** Pointer to the position in the heap of the voxel block */
-  int pointer = kFreeEntry;      
-};
+		struct HashEntry
+		{
+			/** Entry position (lower left corner of the voxel block) */
+			int3 position;
+			/** Pointer to the position in the heap of the voxel block */
+			int pointer = kFreeEntry;
+		};
 
-}  // namespace tsdfvh
+	}  // namespace tsdfvh
 
 }  // namespace refusion

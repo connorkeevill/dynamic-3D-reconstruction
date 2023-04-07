@@ -6,28 +6,29 @@ namespace refusion {
 /**
  * @brief      Structure storing the intrinsic parameters of an RGB-D sensor
  */
-struct RgbdSensor {
- public:
-  /** Horizontal focal lenght in pixel */
-  float fx;
+	struct RgbdSensor
+	{
+	public:
+		/** Horizontal focal lenght in pixel */
+		float fx;
 
-  /** Vertical focal lenght in pixel */
-  float fy;
+		/** Vertical focal lenght in pixel */
+		float fy;
 
-  /** Horizontal coordinate of the principal point */
-  float cx;
+		/** Horizontal coordinate of the principal point */
+		float cx;
 
-  /** Vertical coordinate of the principal point */
-  float cy;
+		/** Vertical coordinate of the principal point */
+		float cy;
 
-  /** Scale factor to convert the depth in meters */
-  float depth_factor;
+		/** Scale factor to convert the depth in meters */
+		float depth_factor;
 
-  /** Number of rows in the image */
-  unsigned int rows;
+		/** Number of rows in the image */
+		unsigned int rows;
 
-  /** Number of columns in the image */
-  unsigned int cols;
-};
+		/** Number of columns in the image */
+		unsigned int cols;
+	};
 
 }  // namespace refusion
