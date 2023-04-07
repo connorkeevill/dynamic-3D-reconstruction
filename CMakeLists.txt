@@ -14,6 +14,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 include_directories(
 src
+include
 ${CUDA_INCLUDE_DIRS}
 ${OpenCV_INCLUDE_DIRS}
 ${EIGEN3_INCLUDE_DIRS}
@@ -25,7 +26,7 @@ cuda_add_library(refusion STATIC
   src/marching_cubes/mesh.cu
   src/marching_cubes/mesh_extractor.cu
   src/tsdfvh/heap.cu
-  src/tsdfvh/hash_table.cu 
+  src/tsdfvh/hash_table.cu
   src/tsdfvh/tsdf_volume.cu
   src/tracker/tracker.cu)
 
