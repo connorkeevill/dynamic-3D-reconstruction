@@ -3,7 +3,6 @@ project(refusion)
 
 add_compile_options(-std=c++11)
 
-#find_package(catkin REQUIRED)
 find_package(CUDA REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -15,7 +14,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 include_directories(
 src
-#${catkin_INCLUDE_DIRS}
 ${CUDA_INCLUDE_DIRS}
 ${OpenCV_INCLUDE_DIRS}
 ${EIGEN3_INCLUDE_DIRS}
