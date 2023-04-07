@@ -14,6 +14,6 @@ WORKDIR /app
 COPY . .
 
 RUN cmake .
-RUN make -j4
+RUN make -j$(nproc)
 
 CMD ["python", "run.py"]
