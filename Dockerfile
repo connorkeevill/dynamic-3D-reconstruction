@@ -9,9 +9,12 @@ RUN apt install -y git
 RUN apt install -y libeigen3-dev
 RUN apt install -y libopencv-dev
 RUN apt install -y python3-pip
+RUN apt install -y nvidia-cuda-gdb
 
 WORKDIR /app
 COPY . .
+
+ARG CKDOCKER=1
 
 RUN cmake .
 RUN make -j$(nproc)
