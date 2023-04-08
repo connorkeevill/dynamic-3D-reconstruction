@@ -6,22 +6,10 @@
 
 using namespace std;
 
-int main(int argc, char** argv)
+refusion::Tracker createTracker()
 {
-	if (argc == 0) {
-		cerr << "No file provided, ending" << endl;
-		exit(0);
-	}
-
-	string filepath = argv[1];
-	cout << "Received filepath: " << filepath << endl;
-
-	cout << "Reading frames from disk..." << endl;
-	TUMVideo video = TUMVideo{filepath, false};
-	cout << "Frames read." << endl;
-
 	// Options for the TSDF representation
-	refusion::tsdfvh::TsdfVolumeOptions tsdf_options;
+	refusion::tsdfvh::TsdfVolumeOptions tsdf_options{};
 	tsdf_options.voxel_size = 0.01;
 	tsdf_options.num_buckets = 50000;
 	tsdf_options.bucket_size = 10;
@@ -46,7 +34,7 @@ int main(int argc, char** argv)
 	tracker_options.remove_dynamics = false;
 
 	// Intrinsic parameters of the sensor
-	refusion::RgbdSensor sensor;
+	refusion::RgbdSensor sensor{};
 	sensor.cx = 319.5f;
 	sensor.cy = 239.5f;
 	sensor.fx = 525.0;
@@ -55,7 +43,24 @@ int main(int argc, char** argv)
 	sensor.cols = 640;
 	sensor.depth_factor = 5000;
 
-	refusion::Tracker tracker(tsdf_options, tracker_options, sensor);
+	return refusion::Tracker{tsdf_options, tracker_options, sensor};
+}
+
+int main(int argc, char** argv)
+{
+	if (argc == 0) {
+		cerr << "No file provided, ending" << endl;
+		exit(0);
+	}
+
+	string filepath = argv[1];
+	cout << "Received filepath: " << filepath << endl;
+
+	cout << "Reading frames from disk..." << endl;
+	TUMVideo video = TUMVideo{filepath, false};
+	cout << "Frames read." << endl;
+
+	refusion::Tracker tracker = createTracker();
 
 	std::string filebase(argv[1]);
 	std::stringstream filepath_out, filepath_time;
@@ -63,21 +68,13 @@ int main(int argc, char** argv)
 	std::ofstream result(filepath_out.str());
 
 	while(!video.finished()) {
-		cout << "Processing frame " << endl;
-
 		Frame frame = video.nextFrame();
-
-		cout << "Frame recieved." << endl;
-
 		tracker.AddScan(frame.rgb, frame.depth);
+//		Eigen::Matrix4d pose = tracker.GetCurrentPose();
+//		Eigen::Quaterniond rotation(pose.block<3, 3>(0, 0));
+//		std::cout << tracker.GetCurrentPose() << std::endl;
 
-		cout << "Frame added." << endl;
-
-		Eigen::Matrix4d pose = tracker.GetCurrentPose();
-		Eigen::Quaterniond rotation(pose.block<3, 3>(0, 0));
-		std::cout << tracker.GetCurrentPose() << std::endl;
-
-		cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
+//		cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
 	}
 
 	std::cout << "Creating mesh..." << std::endl;
