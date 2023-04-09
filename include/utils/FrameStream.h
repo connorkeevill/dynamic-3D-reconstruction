@@ -30,6 +30,7 @@ public:
 	Frame nextFrame() override;
 	RgbdSensor getCameraIntrinsics() override;
 	bool finished() override;
+	int getFrameCount();
 private:
 	vector<Frame> frames{};
 

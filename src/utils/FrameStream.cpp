@@ -79,3 +79,13 @@ bool TUMVideo::finished()
 {
 	return frameCounter == frames.size();
 }
+
+/**
+ * Returns the number of frames in the video.
+ *
+ * @return the number of frames in the video.
+ */
+int TUMVideo::getFrameCount()
+{
+	return frames.size();
+}
