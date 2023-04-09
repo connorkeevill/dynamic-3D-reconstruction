@@ -1,6 +1,5 @@
 #include <iostream>
 #include <Eigen/Geometry>
-#include <opencl-c-base.h>
 #include "utils/FrameStream.h"
 #include "tsdfvh/tsdf_volume.h"
 #include "tracker/tracker.h"
