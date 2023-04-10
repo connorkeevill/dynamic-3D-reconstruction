@@ -366,11 +366,11 @@ namespace refusion {
 							mask[i * image.sensor_.cols + j] = false;
 						}
 					}
+
+				pose_ = prev_pose;
+				TrackCamera(image, mask, false);
 				}
 			}
-
-			pose_ = prev_pose;
-			TrackCamera(image, mask, false);
 		}
 		else {
 			first_scan_ = false;
