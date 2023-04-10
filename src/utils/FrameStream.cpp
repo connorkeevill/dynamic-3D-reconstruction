@@ -37,6 +37,7 @@ TUMVideo::TUMVideo(const string& associationDirectory, bool streamVideoFromDisk=
 			frame.depth = cv::imread(associationDirectory + "/" + depthFrame, CV_LOAD_IMAGE_ANYDEPTH);
 			frame.depth.convertTo(frame.depth, CV_32FC1, 1.0 / 5000.0);
 
+			timestamps.push_back(stod(rgbTimestamp));
 			frames.push_back(frame);
 		}
 	}
@@ -86,4 +87,14 @@ bool TUMVideo::finished()
 int TUMVideo::getFrameCount()
 {
 	return frames.size();
+}
+
+/**
+ * Returns the current timestamp.
+ *
+ * @return the current timestamp.
+ */
+double TUMVideo::getCurrentTimestamp()
+{
+	return timestamps[frameCounter];
 }

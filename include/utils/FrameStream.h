@@ -31,8 +31,10 @@ public:
 	RgbdSensor getCameraIntrinsics() override;
 	bool finished() override;
 	int getFrameCount();
+	double getCurrentTimestamp();
 private:
 	vector<Frame> frames{};
+	vector<double> timestamps{};
 
 	RgbdSensor cameraIntrinsics;
 	string associationFilepath;

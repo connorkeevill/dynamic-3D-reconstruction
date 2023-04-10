@@ -78,9 +78,15 @@ int main(int argc, char** argv)
 	while(!video.finished()) {
 		Frame frame = video.nextFrame();
 		tracker.AddScan(frame.rgb, frame.depth);
-//		Eigen::Matrix4d pose = tracker.GetCurrentPose();
-//		Eigen::Quaterniond rotation(pose.block<3, 3>(0, 0));
-//		std::cout << tracker.GetCurrentPose() << std::endl;
+
+		// Get the current pose
+		Eigen::Matrix4d pose = tracker.GetCurrentPose();
+		Eigen::Quaterniond rotation(pose.block<3, 3>(0, 0));
+
+		// Write the pose to file
+		result << std::fixed << std::setprecision(6) << video.getCurrentTimestamp()
+				   << " " << pose.block<3, 1>(0, 3).transpose() << " "
+				   << rotation.vec().transpose() << " " << rotation.w() << std::endl;
 
 //		cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
 	}
