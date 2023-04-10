@@ -4,6 +4,7 @@
 #include "tsdfvh/tsdf_volume.h"
 #include "tracker/tracker.h"
 #include <chrono>
+#include <iomanip>
 
 using namespace std;
 
