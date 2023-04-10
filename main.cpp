@@ -70,7 +70,7 @@ int main(int argc, char** argv)
 
 	std::string filebase(argv[1]);
 	std::stringstream filepath_out, filepath_time;
-	filepath_out << filebase << "/result.txt";
+	filepath_out << filebase << ".txt";
 	std::ofstream result(filepath_out.str());
 
 	auto before_loop = chrono::high_resolution_clock::now();
