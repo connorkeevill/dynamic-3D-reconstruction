@@ -19,9 +19,7 @@ TUMVideo::TUMVideo(const string& associationDirectory, bool streamVideoFromDisk=
 
 	if(!streamFromDisk)
 	{
-		cout << "Inside TUM constructor, now reading in files" << endl;
 		ifstream file {associationFilepath};
-		cout << "parent path retrieved" << endl;
 		string line;
 
 		while(getline(file, line))
