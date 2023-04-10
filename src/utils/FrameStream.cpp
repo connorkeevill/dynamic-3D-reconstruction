@@ -33,8 +33,6 @@ TUMVideo::TUMVideo(const string& associationDirectory, bool streamVideoFromDisk=
 			// With the extracted filenames, the images are read and stored in the vectors.
 			Frame frame {};
 
-			cout << "Reading in frame " << associationDirectory + rgbFrame << endl;
-
 			frame.rgb = cv::imread(associationDirectory + "/" + rgbFrame, CV_LOAD_IMAGE_COLOR);
 			frame.depth = cv::imread(associationDirectory + "/" + depthFrame, CV_LOAD_IMAGE_ANYDEPTH);
 			frame.depth.convertTo(frame.depth, CV_32FC1, 1.0 / 5000.0);
