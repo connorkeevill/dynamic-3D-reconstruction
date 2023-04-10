@@ -32,7 +32,7 @@ refusion::Tracker createTracker()
 	tracker_options.min_increment = 0.0001;
 	tracker_options.regularization = 0.002;
 	tracker_options.huber_constant = 0.02;
-	tracker_options.remove_dynamics = false;
+	tracker_options.remove_dynamics = true;
 
 	// Intrinsic parameters of the sensor
 	refusion::RgbdSensor sensor{};
@@ -95,7 +95,7 @@ int main(int argc, char** argv)
 	*mesh = tracker.ExtractMesh(low_limits, high_limits);
 	filepath_out.str("");
 	filepath_out.clear();
-	filepath_out << filebase << "mesh.obj";
+	filepath_out << filebase << ".obj";
 	mesh->SaveToFile(filepath_out.str());
 
 	auto after_mesh = chrono::high_resolution_clock::now();
@@ -110,6 +110,7 @@ int main(int argc, char** argv)
 	cout << "Loop: " << loop.count() / 1000000.0 << "s" << endl;
 	cout << "Time per frame: " << loop.count() / 1000000.0 / video.getFrameCount() << "s" << endl;
 	cout << "Mesh: " << mesh_time.count() / 1000000.0 << "s" << endl;
+	cout << endl;
 
 	return EXIT_SUCCESS;
 }
