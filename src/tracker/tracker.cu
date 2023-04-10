@@ -367,9 +367,9 @@ namespace refusion {
 						}
 					}
 
+				}
 				pose_ = prev_pose;
 				TrackCamera(image, mask, false);
-				}
 			}
 		}
 		else {
