@@ -9,10 +9,10 @@ namespace refusion {
 	struct RgbdSensor
 	{
 	public:
-		/** Horizontal focal lenght in pixel */
+		/** Horizontal focal length in pixel */
 		float fx;
 
-		/** Vertical focal lenght in pixel */
+		/** Vertical focal length in pixel */
 		float fy;
 
 		/** Horizontal coordinate of the principal point */
