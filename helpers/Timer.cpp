@@ -14,7 +14,7 @@ string Timer::getTimingTrace()
 {
 	stringstream stream {};
 
-	auto total = duration_cast<microseconds>(measurements[0].second - measurements[measurements.size()].second).count();
+	auto total = duration_cast<microseconds>(measurements[measurements.size()].second - measurements[0].second).count();
 
 	stream << "Total time: " << total / 1000000.0 << "s" << endl;
 
