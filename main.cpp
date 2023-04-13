@@ -57,8 +57,13 @@ int main(int argc, char** argv)
 	timer.addMeasurement("Tracker created");
 
 	// Create output file
-	std::ofstream result((string)argv[1] + ".txt");
-	logger->verboseLog("Output file created.");
+	std::ofstream result;
+	if(settings.outputResults)
+	{
+		logger->verboseLog("Creating output file...");
+		result.open((string)argv[1] + ".txt");
+		logger->verboseLog("Output file created.");
+	}
 
 	// Start main loop
 	logger->verboseLog("Starting main loop...");
