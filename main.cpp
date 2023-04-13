@@ -5,78 +5,45 @@
 #include "tracker/tracker.h"
 #include <chrono>
 #include <iomanip>
+#include <settings.h>
+#include <Logger.h>
+#include <cpptoml.h>
 
 using namespace std;
-
-refusion::Tracker createTracker()
-{
-	// Options for the TSDF representation
-	refusion::tsdfvh::TsdfVolumeOptions tsdf_options{};
-	tsdf_options.voxel_size = 0.01;
-	tsdf_options.num_buckets = 50000;
-	tsdf_options.bucket_size = 10;
-	tsdf_options.num_blocks = 500000;
-	tsdf_options.block_size = 8;
-	tsdf_options.max_sdf_weight = 64;
-	tsdf_options.truncation_distance = 0.1;
-	tsdf_options.max_sensor_depth = 5;
-	tsdf_options.min_sensor_depth = 0.1;
-
-	// Options for the tracker
-	refusion::TrackerOptions tracker_options;
-	tracker_options.max_iterations_per_level[0] = 6;
-	tracker_options.max_iterations_per_level[1] = 3;
-	tracker_options.max_iterations_per_level[2] = 2;
-	tracker_options.downsample[0] = 4;
-	tracker_options.downsample[1] = 2;
-	tracker_options.downsample[2] = 1;
-	tracker_options.min_increment = 0.0001;
-	tracker_options.regularization = 0.002;
-	tracker_options.huber_constant = 0.02;
-	tracker_options.remove_dynamics = false;
-
-	// Intrinsic parameters of the sensor
-	refusion::RgbdSensor sensor{};
-	sensor.cx = 319.5f;
-	sensor.cy = 239.5f;
-	sensor.fx = 525.0;
-	sensor.fy = 525.0;
-	sensor.rows = 480;
-	sensor.cols = 640;
-	sensor.depth_factor = 5000;
-
-	return refusion::Tracker{tsdf_options, tracker_options, sensor};
-}
+using namespace refusion;
 
 int main(int argc, char** argv)
 {
-	auto start = chrono::high_resolution_clock::now();
+	// For now, config file will be in a fixed dir. Here we read in all the settings.
+	shared_ptr<cpptoml::table> config = (cpptoml::parse_file("/app/config.toml"));
 
+	// Use the read in settings to create the settings structs.
+	settings settings = getSettings(*config);
+	tsdfvh::TsdfVolumeOptions tsdf_options = getTsdfVolumeOptions(*config);
+	TrackerOptions tracker_options = getTrackerOptions(*config);
+	RgbdSensor sensor = getSensorConfig(*config);
+
+	// Create the logger
+	Logger logger {settings.verbose, settings.debug, settings.filepath};
+
+	// Protect against no video being provided.
 	if (argc == 0) {
-		cerr << "No file provided, ending" << endl;
-		exit(0);
+		logger.error("No video provided. Ending.");
+		exit(EXIT_FAILURE);
 	}
 
+	// Create TUMVideo object
+	TUMVideo video {argv[1], settings.streamFrames};
 
-	string filepath = argv[1];
-	cout << "Received filepath: " << filepath << endl;
+	// Create tracker
+	refusion::Tracker tracker {tsdf_options, tracker_options, sensor};
 
-	cout << "Reading frames from disk..." << endl;
-	TUMVideo video = TUMVideo{filepath, false};
-	cout << "Frames read." << endl;
+	// Create output file
+	std::ofstream result((string)argv[1] + ".txt");
 
-	auto frames_read = chrono::high_resolution_clock::now();
-
-	refusion::Tracker tracker = createTracker();
-
-	std::string filebase(argv[1]);
-	std::stringstream filepath_out, filepath_time;
-	filepath_out << filebase << ".txt";
-	std::ofstream result(filepath_out.str());
-
-	auto before_loop = chrono::high_resolution_clock::now();
-
-	while(!video.finished()) {
+	// Start main loop
+	while (!video.finished())
+	{
 		Frame frame = video.nextFrame();
 		tracker.AddScan(frame.rgb, frame.depth);
 
@@ -86,14 +53,11 @@ int main(int argc, char** argv)
 
 		// Write the pose to file
 		result << std::fixed << std::setprecision(6) << video.getCurrentTimestamp()
-				   << " " << pose.block<3, 1>(0, 3).transpose() << " "
-				   << rotation.vec().transpose() << " " << rotation.w() << std::endl;
-
-//		cv::Mat virtual_rgb = tracker.GenerateRgb(1280, 960);
+			<< " " << pose.block<3, 1>(0, 3).transpose() << " "
+			<< rotation.vec().transpose() << " " << rotation.w() << std::endl;
 	}
 
-	auto after_loop = chrono::high_resolution_clock::now();
-
+	// Create mesh
 	std::cout << "Creating mesh..." << std::endl;
 	float3 low_limits = make_float3(-3, -3, 0);
 	float3 high_limits = make_float3(3, 3, 4);
@@ -104,20 +68,4 @@ int main(int argc, char** argv)
 	filepath_out.clear();
 	filepath_out << filebase << ".obj";
 	mesh->SaveToFile(filepath_out.str());
-
-	auto after_mesh = chrono::high_resolution_clock::now();
-
-	auto readFrames = chrono::duration_cast<chrono::microseconds>(frames_read - start);
-	auto loop = chrono::duration_cast<chrono::microseconds>(after_loop - before_loop);
-	auto mesh_time = chrono::duration_cast<chrono::microseconds>(after_mesh - after_loop);
-	auto total = chrono::duration_cast<chrono::microseconds>(after_mesh - start);
-
-	cout << "Total time: " << total.count() / 1000000.0 << "s" << endl;
-	cout << "Read frames: " << readFrames.count() / 1000000.0 << "s" << endl;
-	cout << "Loop: " << loop.count() / 1000000.0 << "s" << endl;
-	cout << "Time per frame: " << loop.count() / 1000000.0 / video.getFrameCount() << "s" << endl;
-	cout << "Mesh: " << mesh_time.count() / 1000000.0 << "s" << endl;
-	cout << endl;
-
-	return EXIT_SUCCESS;
 }
