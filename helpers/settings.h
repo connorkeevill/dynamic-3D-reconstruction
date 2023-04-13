@@ -63,16 +63,16 @@ tsdfvh::TsdfVolumeOptions getTsdfVolumeOptions(const cpptoml::table& config)
 TrackerOptions getTrackerOptions(const cpptoml::table &config)
 {
 	refusion::TrackerOptions tracker_options {};
-	tracker_options.max_iterations_per_level[0] = config.get_as<int>("tracker.max_iterations_per_level_0").value_or(tracker_options.max_iterations_per_level[0]);
-	tracker_options.max_iterations_per_level[1] = config.get_as<int>("tracker.max_iterations_per_level_1").value_or(tracker_options.max_iterations_per_level[1]);
-	tracker_options.max_iterations_per_level[2] = config.get_as<int>("tracker.max_iterations_per_level_2").value_or(tracker_options.max_iterations_per_level[2]);
-	tracker_options.downsample[0] = config.get_as<int>("tracker.downsample_0").value_or(tracker_options.downsample[0]);
-	tracker_options.downsample[1] = config.get_as<int>("tracker.downsample_1").value_or(tracker_options.downsample[1]);
-	tracker_options.downsample[2] = config.get_as<int>("tracker.downsample_2").value_or(tracker_options.downsample[2]);
-	tracker_options.min_increment = config.get_as<double>("tracker.min_increment").value_or(tracker_options.min_increment);
-	tracker_options.regularization = config.get_as<double>("tracker.regularization").value_or(tracker_options.regularization);
-	tracker_options.huber_constant = config.get_as<double>("tracker.huber_constant").value_or(tracker_options.huber_constant);
-	tracker_options.remove_dynamics = config.get_as<bool>("tracker.remove_dynamics").value_or(tracker_options.remove_dynamics);
+	tracker_options.max_iterations_per_level[0] = config.get_qualified_as<int>("tracker_options.max_iterations_per_level_0").value_or(tracker_options.max_iterations_per_level[0]);
+	tracker_options.max_iterations_per_level[1] = config.get_qualified_as<int>("tracker.max_iterations_per_level_1").value_or(tracker_options.max_iterations_per_level[1]);
+	tracker_options.max_iterations_per_level[2] = config.get_qualified_as<int>("tracker.max_iterations_per_level_2").value_or(tracker_options.max_iterations_per_level[2]);
+	tracker_options.downsample[0] = config.get_qualified_as<int>("tracker_options.downsample_0").value_or(tracker_options.downsample[0]);
+	tracker_options.downsample[1] = config.get_qualified_as<int>("tracker_options.downsample_1").value_or(tracker_options.downsample[1]);
+	tracker_options.downsample[2] = config.get_qualified_as<int>("tracker_options.downsample_2").value_or(tracker_options.downsample[2]);
+	tracker_options.min_increment = config.get_qualified_as<double>("tracker_options.min_increment").value_or(tracker_options.min_increment);
+	tracker_options.regularization = config.get_qualified_as<double>("tracker_options.regularization").value_or(tracker_options.regularization);
+	tracker_options.huber_constant = config.get_qualified_as<double>("tracker_options.huber_constant").value_or(tracker_options.huber_constant);
+	tracker_options.remove_dynamics = config.get_qualified_as<bool>("tracker_options.remove_dynamics").value_or(tracker_options.remove_dynamics);
 
 	return tracker_options;
 }
@@ -87,13 +87,13 @@ RgbdSensor getSensorConfig(const cpptoml::table &config)
 {
 	// Instantiate the RgbdSensor struct and fill it with the values from the TOML file
 	refusion::RgbdSensor sensor{};
-	sensor.cx = config.get_as<double>("cx").value_or(sensor.cx);
-	sensor.cy = config.get_as<double>("cy").value_or(sensor.cy);
-	sensor.fx = config.get_as<double>("fx").value_or(sensor.fx);
-	sensor.fy = config.get_as<double>("fy").value_or(sensor.fy);
-	sensor.rows = config.get_as<unsigned int>("rows").value_or(sensor.rows);
-	sensor.cols = config.get_as<unsigned int>("cols").value_or(sensor.cols);
-	sensor.depth_factor = config.get_as<double>("depth_factor").value_or(sensor.depth_factor);
+	sensor.cx = config.get_qualified_as<double>("sensor.cx").value_or(sensor.cx);
+	sensor.cy = config.get_qualified_as<double>("sensor.cy").value_or(sensor.cy);
+	sensor.fx = config.get_qualified_as<double>("sensor.fx").value_or(sensor.fx);
+	sensor.fy = config.get_qualified_as<double>("sensor.fy").value_or(sensor.fy);
+	sensor.rows = config.get_qualified_as<unsigned int>("sensor.rows").value_or(sensor.rows);
+	sensor.cols = config.get_qualified_as<unsigned int>("sensor.cols").value_or(sensor.cols);
+	sensor.depth_factor = config.get_qualified_as<double>("sensor.depth_factor").value_or(sensor.depth_factor);
 
 	return sensor;
 }
