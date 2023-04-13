@@ -16,7 +16,7 @@ struct settings
 	/** Logging options **/
 	bool verbose;
 	bool debug;
-	bool writeToFile;
+	bool writeLogsToFile;
 	string filepath;
 
 	/** Input Options **/
@@ -112,7 +112,7 @@ settings getSettings(const cpptoml::table &config)
 
     s.verbose = logging->get_qualified_as<bool>("verbose").value_or(false);
     s.debug = logging->get_qualified_as<bool>("debug").value_or(false);
-    s.writeToFile = logging->get_qualified_as<bool>("writeToFile").value_or(false);
+    s.writeLogsToFile = logging->get_qualified_as<bool>("writeLogsToFile").value_or(false);
     s.filepath = logging->get_qualified_as<std::string>("filepath").value_or("");
 
     auto input = config.get_table("input");
