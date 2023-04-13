@@ -14,9 +14,12 @@ string Timer::getTimingTrace()
 {
 	stringstream stream {};
 
-	auto total = duration_cast<microseconds>(measurements[measurements.size()].second - measurements[0].second).count();
+	auto start = this->measurements[0].second;
+	auto end = high_resolution_clock::now();
 
-	stream << "Total time: " << total / 1000000.0 << "s" << endl;
+	auto total = duration_cast<microseconds>(end - start).count();
+
+	stream << "Total; start -> now: " << total / 1000000.0 << "s" << endl;
 
 	for (int measurement = 1; measurement < this->measurements.size(); measurement++) {
 		auto previous = this->measurements[measurement - 1];
