@@ -16,6 +16,7 @@
 #include "tsdfvh/tsdf_volume.h"
 #include "utils/rgbd_sensor.h"
 #include "marching_cubes/mesh.h"
+#include "Logger.h"
 
 namespace refusion {
 
@@ -134,6 +135,9 @@ namespace refusion {
 		 *  estimation
 		 */
 		bool first_scan_ = true;
+
+		/** Used for logging */
+		Logger logger_;
 	};
 
 }  // namespace refusion

@@ -16,13 +16,15 @@ namespace refusion {
 
 	Tracker::Tracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
 					 const TrackerOptions &tracker_options,
-					 const RgbdSensor &sensor)
+					 const RgbdSensor &sensor,
+					 const Logger &logger)
 	{
 		cudaMallocManaged(&volume_, sizeof(tsdfvh::TsdfVolume));
 		volume_->Init(tsdf_options);
 		options_ = tracker_options;
 		sensor_ = sensor;
 		pose_ = Eigen::Matrix4d::Identity();
+		logger_ = logger;
 	}
 
 	Tracker::~Tracker()
