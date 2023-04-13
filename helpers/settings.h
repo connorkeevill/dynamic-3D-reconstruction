@@ -116,9 +116,7 @@ settings getSettings(const cpptoml::table &config)
 
     auto output = config.get_table("output");
     s.outputMesh = output->get_qualified_as<bool>("outputMesh").value_or(false);
-    s.meshName = output->get_qualified_as<std::string>("meshName").value_or("");
     s.outputResults = output->get_qualified_as<bool>("outputResults").value_or(false);
-    s.resultsName = output->get_qualified_as<std::string>("resultsName").value_or("");
     s.outputTimings = output->get_qualified_as<bool>("outputTimings").value_or(false);
 
 	return s;
