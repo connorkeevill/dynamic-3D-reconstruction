@@ -44,6 +44,9 @@ namespace refusion {
 
 		/** Whether to remove dynamic elements from the model **/
 		bool remove_dynamics = true;  // Default to remove dynamics
+
+		/** Whether to use output the mask used for dynamic removal **/
+		bool output_mask_video;
 	};
 
 /**

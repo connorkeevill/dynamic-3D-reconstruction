@@ -70,6 +70,7 @@ TrackerOptions getTrackerOptions(const cpptoml::table &config)
 	tracker_options.regularization = config.get_qualified_as<double>("tracker_options.regularization").value_or(tracker_options.regularization);
 	tracker_options.huber_constant = config.get_qualified_as<double>("tracker_options.huber_constant").value_or(tracker_options.huber_constant);
 	tracker_options.remove_dynamics = config.get_qualified_as<bool>("tracker_options.remove_dynamics").value_or(tracker_options.remove_dynamics);
+	tracker_options.output_mask_video = config.get_qualified_as<bool>("tracker_options.output_mask_video").value_or(tracker_options.output_mask_video);
 
 	return tracker_options;
 }
