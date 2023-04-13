@@ -64,8 +64,5 @@ int main(int argc, char** argv)
 	refusion::tsdfvh::Mesh *mesh;
 	cudaMallocManaged(&mesh, sizeof(refusion::tsdfvh::Mesh));
 	*mesh = tracker.ExtractMesh(low_limits, high_limits);
-	filepath_out.str("");
-	filepath_out.clear();
-	filepath_out << filebase << ".obj";
-	mesh->SaveToFile(filepath_out.str());
+	mesh->SaveToFile((string)argv[1] + ".txt");
 }
