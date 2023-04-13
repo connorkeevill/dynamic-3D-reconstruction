@@ -24,11 +24,7 @@ struct settings
 
 	/** Output options **/
 	bool outputMesh;
-	string meshName;
-
 	bool outputResults;
-	string resultsName;
-
 	bool outputTimings;
 };
 

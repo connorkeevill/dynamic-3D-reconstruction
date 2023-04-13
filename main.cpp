@@ -92,7 +92,7 @@ int main(int argc, char** argv)
 		refusion::tsdfvh::Mesh *mesh;
 		cudaMallocManaged(&mesh, sizeof(refusion::tsdfvh::Mesh));
 		*mesh = tracker.ExtractMesh(low_limits, high_limits);
-		mesh->SaveToFile(settings.meshName);
+		mesh->SaveToFile((string)argv[1] + ".obj");
 
 		logger->verboseLog("Mesh saved.");
 	}
