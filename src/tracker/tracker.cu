@@ -380,16 +380,16 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		if(tracker_options_.output_mask_video)
+		if(options_.output_mask_video)
 		{
 			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
 					if (mask[i * image.sensor_.cols + j]) {
-						cvmask.at<uchar>(i, j) = 255;
+						output_mask.at<uchar>(i, j) = 255;
 					}
 					else {
-						cvmask.at<uchar>(i, j) = 0;
+						output_mask.at<uchar>(i, j) = 0;
 					}
 				}
 			}
