@@ -10,6 +10,7 @@ RUN apt install -y libeigen3-dev
 RUN apt install -y libopencv-dev
 RUN apt install -y python3-pip
 RUN apt install -y nvidia-cuda-gdb
+RUN apt install -y gdb
 
 WORKDIR /app
 COPY . .
