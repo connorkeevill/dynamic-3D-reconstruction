@@ -31,6 +31,7 @@ public:
 	RgbdSensor getCameraIntrinsics() override;
 	bool finished() override;
 	int getFrameCount();
+	int getCurrentFrameIndex();
 	double getCurrentTimestamp();
 private:
 	vector<Frame> frames{};

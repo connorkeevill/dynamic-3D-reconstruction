@@ -88,6 +88,16 @@ int TUMVideo::getFrameCount()
 }
 
 /**
+ * Returns the index of the current frame.
+ *
+ * @return the current frame index.
+ */
+int TUMVideo::getCurrentFrameIndex()
+{
+	return frameCounter;
+}
+
+/**
  * Returns the current timestamp.
  *
  * @return the current timestamp.
