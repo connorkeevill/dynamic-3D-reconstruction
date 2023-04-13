@@ -124,6 +124,8 @@ settings getSettings(const cpptoml::table &config)
     s.outputResults = output->get_qualified_as<bool>("outputResults").value_or(false);
     s.resultsName = output->get_qualified_as<std::string>("resultsName").value_or("");
     s.outputTimings = output->get_qualified_as<bool>("outputTimings").value_or(false);
+
+	return s;
 }
 
 #endif //REFUSION_SETTINGS_H
