@@ -126,6 +126,6 @@ void Logger::fileLog(string message)
  */
 void Logger::createNewVideo(string videoName, Mat frame) {
 	VideoWriter videoWriter;
-	videoWriter.open(filebase + "/" + videoName + ".avi", CV_FOURCC('M', 'J', 'P', 'G'), 30, frame.size());
+	videoWriter.open(filebase + "-" + videoName + ".avi", CV_FOURCC('M', 'J', 'P', 'G'), 30, frame.size());
 	outputVideos[videoName] = videoWriter;
 }
