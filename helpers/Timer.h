@@ -4,6 +4,7 @@
 #include <chrono>
 #include <string>
 #include <sstream>
+#include <vector>
 
 using namespace std;
 using namespace chrono;
@@ -17,7 +18,7 @@ public:
 	void addMeasurement(string label);
 	string getTimingTrace();
 private:
-	vector<pair<string, time_point<high_resolution_clock>>> measurements;
+	std::vector<pair<string, time_point<high_resolution_clock>>> measurements {};
 };
 
 
