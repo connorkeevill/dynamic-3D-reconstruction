@@ -29,7 +29,7 @@ int main(int argc, char** argv)
 	RgbdSensor sensor = getSensorConfig(*config);
 
 	// Create the logger
-	Logger *logger = new Logger(settings.verbose, settings.debug);
+	Logger *logger = new Logger(settings.verbose, settings.debug, argv[1]);
 
 	logger->alwaysLog("Settings loaded. Starting reconstruction...");
 	logger->verboseLog("VERBOSITY ON");
@@ -92,7 +92,7 @@ int main(int argc, char** argv)
 		if(settings.outputReprojectedVideo)
 		{
 			Mat reprojected = tracker.GenerateRgb(frame.rgb.cols, frame.rgb.rows);
-			logger->addFrameToOutputVideo(reprojected, (string)(argv[1]) + "_reprojected.avi");
+			logger->addFrameToOutputVideo(reprojected, "reprojected.avi");
 		}
 	}
 	logger->verboseLog("Main loop finished.");

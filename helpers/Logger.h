@@ -14,8 +14,8 @@ using namespace cv;
 class Logger
 {
 public:
-	Logger(bool verbose, bool debug);
-	Logger(bool verbose, bool debug, string filepath);
+	Logger(bool verbose, bool debug, string filebase);
+	Logger(bool verbose, bool debug, string filebase, string filepath);
 	~Logger() = default;
 
 	void alwaysLog(string message);
@@ -28,6 +28,7 @@ public:
 private:
 	bool verbose;
 	bool debug;
+	string filebase;
 	bool writeToFile;
 	ofstream fileStream;
 	map<string, VideoWriter> outputVideos;
