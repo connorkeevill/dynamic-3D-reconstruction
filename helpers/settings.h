@@ -26,6 +26,7 @@ struct settings
 	bool outputMesh;
 	bool outputResults;
 	bool outputTimings;
+	bool outputReprojectedVideo;
 };
 
 /**
@@ -118,7 +119,7 @@ settings getSettings(const cpptoml::table &config)
     s.outputMesh = output->get_qualified_as<bool>("outputMesh").value_or(false);
     s.outputResults = output->get_qualified_as<bool>("outputResults").value_or(false);
     s.outputTimings = output->get_qualified_as<bool>("outputTimings").value_or(false);
-
+	s.outputReprojectedVideo = output->get_qualified_as<bool>("outputReprojectedVideo").value_or(false);
 	return s;
 }
 
