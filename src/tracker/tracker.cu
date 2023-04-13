@@ -17,7 +17,7 @@ namespace refusion {
 	Tracker::Tracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
 					 const TrackerOptions &tracker_options,
 					 const RgbdSensor &sensor,
-					 const Logger &logger)
+					 Logger *logger)
 	{
 		cudaMallocManaged(&volume_, sizeof(tsdfvh::TsdfVolume));
 		volume_->Init(tsdf_options);

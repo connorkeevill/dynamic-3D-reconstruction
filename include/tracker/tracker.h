@@ -60,7 +60,7 @@ namespace refusion {
 		 * @param[in]  sensor           The intrinsic parameters of the sensor
 		 */
 		Tracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
-				const TrackerOptions &tracker_options, const RgbdSensor &sensor);
+				const TrackerOptions &tracker_options, const RgbdSensor &sensor, Logger *logger);
 
 		/**
 		 * @brief      Destroys the object.
@@ -137,7 +137,7 @@ namespace refusion {
 		bool first_scan_ = true;
 
 		/** Used for logging */
-		Logger logger_;
+		Logger *logger_;
 	};
 
 }  // namespace refusion
