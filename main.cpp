@@ -26,24 +26,40 @@ int main(int argc, char** argv)
 	// Create the logger
 	Logger logger {settings.verbose, settings.debug, settings.filepath};
 
+	logger.alwaysLog("Settings loaded. Starting reconstruction...");
+	logger.verboseLog("Logger created. Verbosity is turned on.");
+
 	// Protect against no video being provided.
 	if (argc == 0) {
 		logger.error("No video provided. Ending.");
 		exit(EXIT_FAILURE);
 	}
 
+	logger.verboseLog("File provided: " + (string)argv[1] + ".");
+	logger.verboseLog("Reading frames...");
+
 	// Create TUMVideo object
 	TUMVideo video {argv[1], settings.streamFrames};
+
+	logger.verboseLog("Frames read.");
+	logger.verboseLog("Creating tracker...");
 
 	// Create tracker
 	refusion::Tracker tracker {tsdf_options, tracker_options, sensor};
 
+	logger.verboseLog("Tracker created.");
+
 	// Create output file
 	std::ofstream result((string)argv[1] + ".txt");
+
+	logger.verboseLog("Output file created.");
+	logger.verboseLog("Starting main loop...");
 
 	// Start main loop
 	while (!video.finished())
 	{
+		logger.debugLog("Processing frame " + to_string(video.getCurrentFrameIndex()) + ".");
+
 		Frame frame = video.nextFrame();
 		tracker.AddScan(frame.rgb, frame.depth);
 
@@ -57,12 +73,19 @@ int main(int argc, char** argv)
 			<< rotation.vec().transpose() << " " << rotation.w() << std::endl;
 	}
 
+	logger.verboseLog("Main loop finished.");
+
 	// Create mesh
-	std::cout << "Creating mesh..." << std::endl;
+	logger.verboseLog("Saving mesh...");
 	float3 low_limits = make_float3(-3, -3, 0);
 	float3 high_limits = make_float3(3, 3, 4);
 	refusion::tsdfvh::Mesh *mesh;
 	cudaMallocManaged(&mesh, sizeof(refusion::tsdfvh::Mesh));
 	*mesh = tracker.ExtractMesh(low_limits, high_limits);
 	mesh->SaveToFile((string)argv[1] + ".txt");
+
+	logger.verboseLog("Mesh saved.");
+	logger.alwaysLog("Done.");
+
+	return EXIT_SUCCESS;
 }
