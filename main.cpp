@@ -40,26 +40,24 @@ int main(int argc, char** argv)
 	}
 
 	logger->verboseLog("File provided: " + (string)argv[1] + ".");
-	logger->verboseLog("Reading frames...");
 
 	// Create TUMVideo object
+	logger->verboseLog("Reading frames...");
 	TUMVideo video {argv[1], settings.streamFrames};
-
 	logger->verboseLog("Frames read.");
-	logger->verboseLog("Creating tracker...");
 
 	// Create tracker
+	logger->verboseLog("Creating tracker...");
 	refusion::Tracker tracker {tsdf_options, tracker_options, sensor};
-
 	logger->verboseLog("Tracker created.");
 
 	// Create output file
 	std::ofstream result((string)argv[1] + ".txt");
-
 	logger->verboseLog("Output file created.");
-	logger->verboseLog("Starting main loop...");
+
 
 	// Start main loop
+	logger->verboseLog("Starting main loop...");
 	while (!video.finished())
 	{
 		logger->debugLog("Processing frame " + to_string(video.getCurrentFrameIndex()) + ".");
