@@ -1,6 +1,6 @@
-//
-// Created by Connor Keevill on 13/04/2023.
-//
+
+#ifndef REFUSION_LOGGER_H
+#define REFUSION_LOGGER_H
 
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
@@ -9,8 +9,6 @@
 using namespace std;
 using namespace cv;
 
-#ifndef REFUSION_LOGGER_H
-#define REFUSION_LOGGER_H
 
 class Logger
 {
