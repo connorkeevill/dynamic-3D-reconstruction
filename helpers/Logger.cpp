@@ -9,11 +9,12 @@
  *
  * @param verbose verbosity flag
  * @param debug debug flag
- * @param writeToFile write to file flag
+ * @param filebase the base of the file to write to
  */
-Logger::Logger(bool verbose, bool debug) {
+Logger::Logger(bool verbose, bool debug, string filebase) {
 	this->verbose = verbose;
 	this->debug = debug;
+	this->filebase = filebase;
 }
 
 /**
@@ -23,7 +24,7 @@ Logger::Logger(bool verbose, bool debug) {
  * @param debug debug flag
  * @param filepath the filepath to write to
  */
-Logger::Logger(bool verbose, bool debug, string filepath) : Logger(verbose, debug)
+Logger::Logger(bool verbose, bool debug, string filebase, string filepath) : Logger(verbose, debug, filebase)
 {
 	this->writeToFile = true;
 	fileStream.open(filepath + ".txt");
