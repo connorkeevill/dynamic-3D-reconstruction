@@ -10,6 +10,7 @@ include_directories(
     src
     include
     helpers
+    cpptoml/include
     ${OpenCV_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
 )
