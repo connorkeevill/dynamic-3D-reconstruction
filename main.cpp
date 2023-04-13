@@ -52,7 +52,7 @@ int main(int argc, char** argv)
 
 	// Create tracker
 	logger->verboseLog("Creating tracker...");
-	refusion::Tracker tracker {tsdf_options, tracker_options, sensor};
+	refusion::Tracker tracker {tsdf_options, tracker_options, sensor, logger};
 	logger->verboseLog("Tracker created.");
 	timer.addMeasurement("Tracker created");
 
