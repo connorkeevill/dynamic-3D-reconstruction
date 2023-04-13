@@ -9,6 +9,7 @@ find_package(Eigen3 REQUIRED)
 include_directories(
     src
     include
+    helpers
     ${OpenCV_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
 )
@@ -33,7 +34,7 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
-file(GLOB src_files *.cpp)
+file(GLOB src_files *.cpp */*.cpp)
 add_executable(main ${src_files} src/utils/FrameStream.cpp)
 #add_executable(main src/example/example.cpp src/example/fr_parser.cpp)
 
