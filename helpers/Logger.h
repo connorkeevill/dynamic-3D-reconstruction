@@ -5,6 +5,7 @@
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <fstream>
+#include <map>
 
 using namespace std;
 using namespace cv;
@@ -21,14 +22,19 @@ public:
 	void verboseLog(string message);
 	void debugLog(string message);
 	void error(string message);
+	void addFrameToOutputVideo(Mat frame, string videoName);
+
+	void release();
 private:
 	bool verbose;
 	bool debug;
 	bool writeToFile;
 	ofstream fileStream;
+	map<string, VideoWriter> outputVideos;
 
 	void consoleLog(string message);
 	void fileLog(string message);
+	void createNewVideo(string videoName, Mat frame);
 };
 
 

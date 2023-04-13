@@ -88,6 +88,12 @@ int main(int argc, char** argv)
 				<< " " << pose.block<3, 1>(0, 3).transpose() << " "
 				<< rotation.vec().transpose() << " " << rotation.w() << std::endl;
 		}
+
+		if(settings.outputReprojectedVideo)
+		{
+			Mat reprojected = tracker.GenerateRgb(frame.rgb.cols, frame.rgb.rows);
+			logger->addFrameToOutputVideo(reprojected, (string)(argv[1]) + "_reprojected.avi");
+		}
 	}
 	logger->verboseLog("Main loop finished.");
 	timer.addMeasurement("Main loop finished");
@@ -108,9 +114,10 @@ int main(int argc, char** argv)
 	}
 
 
-	logger->alwaysLog(timer.getTimingTrace());
+	if(settings.outputTimings) { logger->alwaysLog(timer.getTimingTrace()); }
 	logger->alwaysLog("");  // New line
 	logger->alwaysLog("Done.");
+	logger->release();
 
 	return EXIT_SUCCESS;
 }
