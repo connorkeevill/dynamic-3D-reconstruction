@@ -13,6 +13,32 @@
 #define THREADS_PER_BLOCK3 32
 
 namespace refusion {
+	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					 const TrackerOptions &tracker_options,
+					 const RgbdSensor &sensor,
+					 Logger *logger)
+	{
+		if(tracker_options.reconstruction_strategy == "residual")
+		{
+			return new refusion::ReTracker(tsdf_options, tracker_options, sensor, logger);
+		}
+		else if(tracker_options.reconstruction_strategy == "optical_flow")
+		{
+//			return new refusion::OpticalFlowTracker(tsdf_options, tracker_options, sensor, logger);
+		}
+		else if(tracker_options.reconstruction_strategy == "static")
+		{
+//			return new refusion::StaticTracker(tsdf_options, tracker_options, sensor, logger);
+		}
+		else
+		{
+			logger->alwaysLog("Unknown reconstruction strategy: " + tracker_options.reconstruction_strategy);
+			logger->error("Reconstruction strategy not valid, exiting");
+			exit(EXIT_FAILURE);
+		}
+
+		return nullptr;
+	}
 
 	Tracker::Tracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
 					 const TrackerOptions &tracker_options,
@@ -332,8 +358,7 @@ namespace refusion {
 	 *
 	 * @param image
 	 */
-	void ReTracker::TrackCamera(const RgbdImage &image, bool *mask,
-							  bool create_mask)
+	void ReTracker::TrackCamera(const RgbdImage &image, bool *mask, bool create_mask)
 	{
 		Vector6d increment, prev_increment;
 		increment << 0, 0, 0, 0, 0, 0;

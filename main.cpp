@@ -52,7 +52,8 @@ int main(int argc, char** argv)
 
 	// Create tracker
 	logger->verboseLog("Creating tracker...");
-	refusion::ReTracker tracker {tsdf_options, tracker_options, sensor, logger};
+	refusion::Tracker *tracker = CreateTracker(tsdf_options, tracker_options, sensor, logger);
+//	refusion::ReTracker tracker {tsdf_options, tracker_options, sensor, logger};
 	logger->verboseLog("Tracker created.");
 	timer.addMeasurement("Tracker created");
 
@@ -74,13 +75,13 @@ int main(int argc, char** argv)
 		Frame frame = video.nextFrame();
 		logger->debugLog("Frame received from video stream.");
 
-		tracker.AddScan(frame.rgb, frame.depth);
+		tracker->AddScan(frame.rgb, frame.depth);
 		logger->debugLog("Frame added to tracker.");
 
 		if(settings.outputResults)
 		{
 			// Get the current pose
-			Eigen::Matrix4d pose = tracker.GetCurrentPose();
+			Eigen::Matrix4d pose = tracker->GetCurrentPose();
 			Eigen::Quaterniond rotation(pose.block<3, 3>(0, 0));
 
 			// Write the pose to file
@@ -91,7 +92,7 @@ int main(int argc, char** argv)
 
 		if(settings.outputReprojectedVideo)
 		{
-			Mat reprojected = tracker.GenerateRgb(frame.rgb.cols, frame.rgb.rows);
+			Mat reprojected = tracker->GenerateRgb(frame.rgb.cols, frame.rgb.rows);
 			logger->addFrameToOutputVideo(reprojected, "reprojected.avi");
 		}
 	}
@@ -106,13 +107,12 @@ int main(int argc, char** argv)
 		float3 high_limits = make_float3(3, 3, 4);
 		refusion::tsdfvh::Mesh *mesh;
 		cudaMallocManaged(&mesh, sizeof(refusion::tsdfvh::Mesh));
-		*mesh = tracker.ExtractMesh(low_limits, high_limits);
+		*mesh = tracker->ExtractMesh(low_limits, high_limits);
 		mesh->SaveToFile((string)argv[1] + ".obj");
 
 		logger->verboseLog("Mesh saved.");
 		timer.addMeasurement("Mesh saved");
 	}
-
 
 	if(settings.outputTimings) { logger->alwaysLog(timer.getTimingTrace()); }
 	logger->alwaysLog("");  // New line

@@ -43,7 +43,7 @@ namespace refusion {
 		float regularization;
 
 		/** Whether to remove dynamic elements from the model **/
-		bool remove_dynamics = true;  // Default to remove dynamics
+		string reconstruction_strategy;
 
 		/** Whether to use output the mask used for dynamic removal **/
 		bool output_mask_video;
@@ -156,4 +156,8 @@ namespace refusion {
 	protected:
 		void TrackCamera(const refusion::RgbdImage &image, bool *mask, bool create_mask) override;
 	};
+
+	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					   const TrackerOptions &tracker_options, const RgbdSensor &sensor, Logger *logger);
+
 }  // namespace refusion
