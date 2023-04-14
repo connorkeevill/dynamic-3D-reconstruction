@@ -61,8 +61,8 @@ TrackerOptions getTrackerOptions(const cpptoml::table &config)
 {
 	refusion::TrackerOptions tracker_options {};
 	tracker_options.max_iterations_per_level[0] = config.get_qualified_as<int>("tracker_options.max_iterations_per_level_0").value_or(tracker_options.max_iterations_per_level[0]);
-	tracker_options.max_iterations_per_level[1] = config.get_qualified_as<int>("tracker.max_iterations_per_level_1").value_or(tracker_options.max_iterations_per_level[1]);
-	tracker_options.max_iterations_per_level[2] = config.get_qualified_as<int>("tracker.max_iterations_per_level_2").value_or(tracker_options.max_iterations_per_level[2]);
+	tracker_options.max_iterations_per_level[1] = config.get_qualified_as<int>("tracker_options.max_iterations_per_level_1").value_or(tracker_options.max_iterations_per_level[1]);
+	tracker_options.max_iterations_per_level[2] = config.get_qualified_as<int>("tracker_options.max_iterations_per_level_2").value_or(tracker_options.max_iterations_per_level[2]);
 	tracker_options.downsample[0] = config.get_qualified_as<int>("tracker_options.downsample_0").value_or(tracker_options.downsample[0]);
 	tracker_options.downsample[1] = config.get_qualified_as<int>("tracker_options.downsample_1").value_or(tracker_options.downsample[1]);
 	tracker_options.downsample[2] = config.get_qualified_as<int>("tracker_options.downsample_2").value_or(tracker_options.downsample[2]);
