@@ -28,7 +28,7 @@ namespace refusion {
 		}
 		else if(tracker_options.reconstruction_strategy == "static")
 		{
-//			return new refusion::StaticTracker(tsdf_options, tracker_options, sensor, logger);
+			return new refusion::StaticTracker(tsdf_options, tracker_options, sensor, logger);
 		}
 		else
 		{
@@ -83,7 +83,25 @@ namespace refusion {
 		return Intensity(c1_float) - Intensity(c2_float);
 	}
 
-	__global__ void CreateLinearSystem(tsdfvh::TsdfVolume *volume,
+	/**
+	 * Used in camera tracking for ReTracker. This is terribly messy code, but there's too much linear algebra
+	 * to clean it up right now.
+	 * TODO: clean this up.
+	 *
+	 * @param volume
+	 * @param huber_constant
+	 * @param rgb
+	 * @param depth
+	 * @param mask
+	 * @param transform
+	 * @param sensor
+	 * @param acc_H
+	 * @param acc_b
+	 * @param downsample
+	 * @param residuals_threshold
+	 * @param create_mask
+	 */
+	__global__ void CreateLinearSystemResidual(tsdfvh::TsdfVolume *volume,
 									   float huber_constant, uchar3 *rgb,
 									   float *depth, bool *mask, float4x4 transform,
 									   RgbdSensor sensor, mat6x6 *acc_H,
@@ -205,6 +223,135 @@ namespace refusion {
 				new_b = new_b +
 						weight * jacobian_color.getTranspose() *
 						(Intensity(color) - Intensity(color2));
+			}
+
+			for (int j = 0; j < 36; j++) atomicAdd(&((*acc_H)(j)), new_H(j));
+			for (int j = 0; j < 6; j++) atomicAdd(&((*acc_b)(j)), new_b(j));
+		}
+	}
+
+	/**
+	 * Used in camrera tracking for StaticTracker and OpticalFlowTracker. The duplication of code between this and the
+	 * previous function is a very hacky way of getting the behaviour needed, but there's too much linear algebra to
+	 * tidy this up right now.
+	 * TODO: clean this up.
+	 *
+	 * @param volume
+	 * @param huber_constant
+	 * @param rgb
+	 * @param depth
+	 * @param mask
+	 * @param transform
+	 * @param sensor
+	 * @param acc_H
+	 * @param acc_b
+	 * @param downsample
+	 */
+	__global__ void CreateLinearSystemWithMask(tsdfvh::TsdfVolume *volume,
+									   float huber_constant, uchar3 *rgb,
+									   float *depth, bool *mask, float4x4 transform,
+									   RgbdSensor sensor, mat6x6 *acc_H,
+									   mat6x1 *acc_b, int downsample)
+
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		int stride = blockDim.x * gridDim.x;
+		int size = sensor.rows * sensor.cols;
+		for (int idx = index; idx < size / (downsample * downsample); idx += stride) {
+			mat6x6 new_H;
+			mat6x1 new_b;
+			new_H.setZero();
+			new_b.setZero();
+			int v = (idx / (sensor.cols / downsample)) * downsample;
+			int u = (idx - (sensor.cols / downsample) * v / downsample) * downsample;
+			int i = v * sensor.cols + u;
+			if (depth[i] < volume->GetOptions().min_sensor_depth) {
+				continue;
+			}
+			if (depth[i] > volume->GetOptions().max_sensor_depth) {
+				continue;
+			}
+			float3 point = transform * GetPoint3d(i, depth[i], sensor);
+			tsdfvh::Voxel v1 = volume->GetInterpolatedVoxel(point);
+			if (v1.weight == 0) {
+				continue;
+			}
+			float sdf = v1.sdf;
+
+			// This line is the main change from the other kernel: that function was using residual thresholding here,
+			// but here we're using a mask instead.
+			if(mask[i])
+			{
+				continue;
+			}
+			mat1x3 gradient;
+			// x
+			float voxel_size = volume->GetOptions().voxel_size;
+			v1 = volume->GetInterpolatedVoxel(point +
+											  make_float3(voxel_size, 0.0f, 0.0f));
+			if (v1.weight == 0 || v1.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			tsdfvh::Voxel v2 = volume->GetInterpolatedVoxel(
+					point + make_float3(-voxel_size, 0.0f, 0.0f));
+			if (v2.weight == 0 || v2.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			gradient(0) = (v1.sdf - v2.sdf) / (2 * voxel_size);
+			// y
+			v1 = volume->GetInterpolatedVoxel(point +
+											  make_float3(0.0f, voxel_size, 0.0f));
+			if (v1.weight == 0 || v1.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			v2 = volume->GetInterpolatedVoxel(point +
+											  make_float3(0.0f, -voxel_size, 0.0f));
+			if (v2.weight == 0 || v2.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			gradient(1) = (v1.sdf - v2.sdf) / (2 * voxel_size);
+			// z
+			v1 = volume->GetInterpolatedVoxel(point +
+											  make_float3(0.0f, 0.0f, voxel_size));
+			if (v1.weight == 0 || v1.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			v2 = volume->GetInterpolatedVoxel(point +
+											  make_float3(0.0f, 0.0f, -voxel_size));
+			if (v2.weight == 0 || v2.sdf >= volume->GetOptions().truncation_distance) {
+				continue;
+			}
+			gradient(2) = (v1.sdf - v2.sdf) / (2 * voxel_size);
+
+			// Partial derivative of position wrt optimization parameters
+			mat3x6 d_position;
+			d_position(0, 0) = 0;
+			d_position(0, 1) = point.z;
+			d_position(0, 2) = -point.y;
+			d_position(0, 3) = 1;
+			d_position(0, 4) = 0;
+			d_position(0, 5) = 0;
+			d_position(1, 0) = -point.z;
+			d_position(1, 1) = 0;
+			d_position(1, 2) = point.x;
+			d_position(1, 3) = 0;
+			d_position(1, 4) = 1;
+			d_position(1, 5) = 0;
+			d_position(2, 0) = point.y;
+			d_position(2, 1) = -point.x;
+			d_position(2, 2) = 0;
+			d_position(2, 3) = 0;
+			d_position(2, 4) = 0;
+			d_position(2, 5) = 1;
+
+			// Jacobian
+			mat1x6 jacobian = gradient * d_position;
+
+			float huber = fabs(sdf) < huber_constant ? 1.0 : huber_constant / fabs(sdf);
+			bool use_depth = true;
+			if (use_depth) {
+				new_H = new_H + huber * jacobian.getTranspose() * jacobian;
+				new_b = new_b + huber * jacobian.getTranspose() * sdf;
 			}
 
 			for (int j = 0; j < 36; j++) atomicAdd(&((*acc_H)(j)), new_H(j));
@@ -393,7 +540,7 @@ namespace refusion {
 										  volume_->GetOptions().truncation_distance;
 				}
 				// Kernel to fill in parallel acc_H and acc_b
-				CreateLinearSystem<<<thread_blocks, threads_per_block>>>(
+				CreateLinearSystemResidual<<<thread_blocks, threads_per_block>>>(
 						volume_, options_.huber_constant, image.rgb_, image.depth_, mask,
 						transform_cuda, sensor_, acc_H, acc_b, options_.downsample[lvl],
 						residuals_threshold, create_mask_now);
@@ -487,6 +634,144 @@ namespace refusion {
 
 			pose_ = prev_pose;
 			TrackCamera(image, mask, false);
+		} else {
+			first_scan_ = false;
+		}
+
+		Eigen::Matrix4f posef = pose_.cast<float>();
+		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
+
+		if(options_.output_mask_video)
+		{
+			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (mask[i * image.sensor_.cols + j]) {
+						output_mask.at<uchar>(i, j) = 255;
+					}
+					else {
+						output_mask.at<uchar>(i, j) = 0;
+					}
+				}
+			}
+
+			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
+			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
+		}
+
+		volume_->IntegrateScan(image, pose_cuda, mask);
+
+		cudaFree(mask);
+	}
+
+
+	/**
+	 * @brief Constructor for StaticTracker.
+	 *
+	 * @param tsdf_options
+	 * @param tracker_options
+	 * @param sensor
+	 * @param logger
+	 */
+	StaticTracker::StaticTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					 const TrackerOptions &tracker_options,
+					 const RgbdSensor &sensor,
+					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
+	{}
+
+	/**
+	 * @brief Track the camera to the current scan.
+	 *
+	 * @param image
+	 */
+	void StaticTracker::TrackCamera(const RgbdImage &image, bool *mask)
+	{
+		Vector6d increment, prev_increment;
+		increment << 0, 0, 0, 0, 0, 0;
+		prev_increment = increment;
+
+		mat6x6 *acc_H;
+		cudaMallocManaged(&acc_H, sizeof(mat6x6));
+		mat6x1 *acc_b;
+		cudaMallocManaged(&acc_b, sizeof(mat6x1));
+		cudaDeviceSynchronize();
+		for (int lvl = 0; lvl < 3; ++lvl) {
+			for (int i = 0; i < options_.max_iterations_per_level[lvl]; ++i) {
+				Eigen::Matrix4d cam_to_world = Exp(v2t(increment)) * pose_;
+				Eigen::Matrix4f cam_to_worldf = cam_to_world.cast<float>();
+				float4x4 transform_cuda = float4x4(cam_to_worldf.data()).getTranspose();
+
+				acc_H->setZero();
+				acc_b->setZero();
+				int threads_per_block = THREADS_PER_BLOCK3;
+				int thread_blocks =
+						(sensor_.cols * sensor_.rows + threads_per_block - 1) /
+						threads_per_block;
+
+				// Kernel to fill in parallel acc_H and acc_b
+				CreateLinearSystemWithMask<<<thread_blocks, threads_per_block>>>(
+						volume_, options_.huber_constant, image.rgb_, image.depth_, mask,
+						transform_cuda, sensor_, acc_H, acc_b, options_.downsample[lvl]);
+				cudaDeviceSynchronize();
+				Eigen::Matrix<double, 6, 6> H;
+				Vector6d b;
+				for (int r = 0; r < 6; r++) {
+					for (int c = 0; c < 6; c++) {
+						H(r, c) = static_cast<double>((*acc_H)(r, c));
+					}
+				}
+				for (int k = 0; k < 6; k++) {
+					b(k) = static_cast<double>((*acc_b)(k));
+				}
+				double scaling = 1 / H.maxCoeff();
+				b *= scaling;
+				H *= scaling;
+				H = H + options_.regularization * Eigen::MatrixXd::Identity(6, 6) * i;
+				increment = increment - SolveLdlt(H, b);
+				Vector6d change = increment - prev_increment;
+				if (change.norm() <= options_.min_increment) break;
+				prev_increment = increment;
+			}
+		}
+		if (std::isnan(increment.sum())) increment << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
+		cudaFree(acc_H);
+		cudaFree(acc_b);
+
+		pose_ = Exp(v2t(increment)) * pose_;
+		prev_increment_ = increment;
+	}
+
+	/**
+	 * @brief Adds the given image to the volume.
+	 *
+	 * @param image
+	 * @param mask
+	 * @param use_prev_increment
+	 */
+	void StaticTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
+	{
+		RgbdImage image;
+		image.Init(sensor_);
+
+		// Linear copy for now
+		for (int i = 0; i < image.sensor_.rows; i++) {
+			for (int j = 0; j < image.sensor_.cols; j++) {
+				image.rgb_[i * image.sensor_.cols + j] = make_uchar3(rgb.at<cv::Vec3b>(i, j)(2), rgb.at<cv::Vec3b>(i, j)(1), rgb.at<cv::Vec3b>(i, j)(0));
+				image.depth_[i * image.sensor_.cols + j] = depth.at<float>(i, j);
+			}
+		}
+
+		bool *mask;
+		cudaMallocManaged(&mask, sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
+		for (int i = 0; i < image.sensor_.rows * image.sensor_.cols; i++) {
+			mask[i] = false;
+		}
+
+		if (!first_scan_) {
+			Eigen::Matrix4d prev_pose = pose_;
+			TrackCamera(image, mask);
 		} else {
 			first_scan_ = false;
 		}

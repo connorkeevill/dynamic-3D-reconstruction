@@ -109,16 +109,6 @@ namespace refusion {
 		cv::Mat GenerateRgb(int width, int height);
 
 	protected:
-		/**
-		 * @brief      Estimates the pose of the sensor.
-		 *
-		 * @param[in]  image        The RGB-D image
-		 * @param      mask         The mask containing dynamic elements. It is
-		 *                          created if create_mask is set to true
-		 * @param[in]  create_mask  If true, mask will be created
-		 */
-		virtual void TrackCamera(const RgbdImage &image, bool *mask, bool create_mask) = 0;
-
 		/** TSDF volume */
 		tsdfvh::TsdfVolume *volume_;
 
@@ -143,6 +133,9 @@ namespace refusion {
 		Logger *logger_;
 	};
 
+	/**
+	 * @brief      Implementation of a tracker which performs the reconstruction as described in ReFusion paper.
+	 */
 	class ReTracker : public refusion::Tracker
 	{
 	public:
@@ -154,7 +147,50 @@ namespace refusion {
 		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
 
 	protected:
-		void TrackCamera(const refusion::RgbdImage &image, bool *mask, bool create_mask) override;
+		/**
+		 * @brief      Estimates the pose of the sensor.
+		 *
+		 * @param[in]  image        The RGB-D image
+		 * @param      mask         The mask containing dynamic elements. It is
+		 *                          created if create_mask is set to true
+		 * @param[in]  create_mask  If true, mask will be created
+		 */
+		void TrackCamera(const refusion::RgbdImage &image, bool *mask, bool create_mask);
+	};
+
+
+	/**
+	 * @brief      Modifiation of the base tracker provided in source code for refusion to perform static
+	 * 			reconstruction; all the dynamic removal stuff has been removed here. To make a baseline.
+	 */
+	class StaticTracker : public refusion::Tracker
+	{
+	public:
+		StaticTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					  const refusion::TrackerOptions &tracker_options, const refusion::RgbdSensor &sensor, Logger *logger);
+
+		~StaticTracker() = default;
+
+		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
+	protected:
+		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
+	};
+
+
+	/**
+	 * @brief  Novel tracker implementation which uses Optical Flow to create a mask and remove dynamic objects.
+	 */
+	class OpticaFlowTracker : public refusion::Tracker
+	{
+	public:
+		OpticaFlowTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+						  const refusion::TrackerOptions &tracker_options, const refusion::RgbdSensor &sensor, Logger *logger);
+
+		~OpticaFlowTracker() = default;
+
+		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
+	protected:
+		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
 	};
 
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
