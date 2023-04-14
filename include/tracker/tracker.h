@@ -11,6 +11,7 @@
 
 #include <Eigen/Core>
 
+#include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include "tsdfvh/tsdf_volume.h"
@@ -180,17 +181,19 @@ namespace refusion {
 	/**
 	 * @brief  Novel tracker implementation which uses Optical Flow to create a mask and remove dynamic objects.
 	 */
-	class OpticaFlowTracker : public refusion::Tracker
+	class OpticalFlowTracker : public refusion::Tracker
 	{
 	public:
-		OpticaFlowTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+		OpticalFlowTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
 						  const refusion::TrackerOptions &tracker_options, const refusion::RgbdSensor &sensor, Logger *logger);
 
-		~OpticaFlowTracker() = default;
+		~OpticalFlowTracker() = default;
 
 		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
 	protected:
 		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
+		cv::Mat prev_rgb_frame;
+
 	};
 
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,

@@ -24,7 +24,7 @@ namespace refusion {
 		}
 		else if(tracker_options.reconstruction_strategy == "optical_flow")
 		{
-//			return new refusion::OpticalFlowTracker(tsdf_options, tracker_options, sensor, logger);
+			return new refusion::OpticalFlowTracker(tsdf_options, tracker_options, sensor, logger);
 		}
 		else if(tracker_options.reconstruction_strategy == "static")
 		{
@@ -69,6 +69,17 @@ namespace refusion {
 				0.0, 0.0, 0.0, 0.0;
 
 		return M;
+	}
+
+	float length(cv::Point2f p)
+	{
+		return sqrt(p.x * p.x + p.y * p.y);
+	}
+
+	cv::Point2f normalize(cv::Point2f p)
+	{
+		float len = length(p);
+		return {p.x / len, p.y / len};
 	}
 
 	__host__ __device__ float Intensity(float3 color)
@@ -282,6 +293,7 @@ namespace refusion {
 			// but here we're using a mask instead.
 			if(mask[i])
 			{
+				cout << "mask is true" << endl;
 				continue;
 			}
 			mat1x3 gradient;
@@ -775,6 +787,195 @@ namespace refusion {
 		} else {
 			first_scan_ = false;
 		}
+
+		Eigen::Matrix4f posef = pose_.cast<float>();
+		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
+
+		if(options_.output_mask_video)
+		{
+			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (mask[i * image.sensor_.cols + j]) {
+						output_mask.at<uchar>(i, j) = 255;
+					}
+					else {
+						output_mask.at<uchar>(i, j) = 0;
+					}
+				}
+			}
+
+			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
+			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
+		}
+
+		volume_->IntegrateScan(image, pose_cuda, mask);
+
+		cudaFree(mask);
+	}
+
+
+	/**
+	 * @brief Constructor for the OpticalFlowTracker class.
+	 *
+	 * @param image
+	 */
+	OpticalFlowTracker::OpticalFlowTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					 const TrackerOptions &tracker_options,
+					 const RgbdSensor &sensor,
+					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
+	{}
+
+	/**
+	 * @brief Tracks the camera using optical flow.
+	 *
+	 * @param image
+	 * @param mask
+	 */
+	void OpticalFlowTracker::TrackCamera(const RgbdImage &image, bool *mask)
+	{
+		Vector6d increment, prev_increment;
+		increment << 0, 0, 0, 0, 0, 0;
+		prev_increment = increment;
+
+		mat6x6 *acc_H;
+		cudaMallocManaged(&acc_H, sizeof(mat6x6));
+		mat6x1 *acc_b;
+		cudaMallocManaged(&acc_b, sizeof(mat6x1));
+		cudaDeviceSynchronize();
+		for (int lvl = 0; lvl < 3; ++lvl) {
+			for (int i = 0; i < options_.max_iterations_per_level[lvl]; ++i) {
+				Eigen::Matrix4d cam_to_world = Exp(v2t(increment)) * pose_;
+				Eigen::Matrix4f cam_to_worldf = cam_to_world.cast<float>();
+				float4x4 transform_cuda = float4x4(cam_to_worldf.data()).getTranspose();
+
+				acc_H->setZero();
+				acc_b->setZero();
+				int threads_per_block = THREADS_PER_BLOCK3;
+				int thread_blocks =
+						(sensor_.cols * sensor_.rows + threads_per_block - 1) /
+						threads_per_block;
+
+				// Kernel to fill in parallel acc_H and acc_b
+				CreateLinearSystemWithMask<<<thread_blocks, threads_per_block>>>(
+						volume_, options_.huber_constant, image.rgb_, image.depth_, mask,
+						transform_cuda, sensor_, acc_H, acc_b, options_.downsample[lvl]);
+				cudaDeviceSynchronize();
+				Eigen::Matrix<double, 6, 6> H;
+				Vector6d b;
+				for (int r = 0; r < 6; r++) {
+					for (int c = 0; c < 6; c++) {
+						H(r, c) = static_cast<double>((*acc_H)(r, c));
+					}
+				}
+				for (int k = 0; k < 6; k++) {
+					b(k) = static_cast<double>((*acc_b)(k));
+				}
+				double scaling = 1 / H.maxCoeff();
+				b *= scaling;
+				H *= scaling;
+				H = H + options_.regularization * Eigen::MatrixXd::Identity(6, 6) * i;
+				increment = increment - SolveLdlt(H, b);
+				Vector6d change = increment - prev_increment;
+				if (change.norm() <= options_.min_increment) break;
+				prev_increment = increment;
+			}
+		}
+		if (std::isnan(increment.sum())) increment << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
+		cudaFree(acc_H);
+		cudaFree(acc_b);
+
+		pose_ = Exp(v2t(increment)) * pose_;
+		prev_increment_ = increment;
+	}
+
+
+	void OpticalFlowTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
+	{
+		RgbdImage image;
+		image.Init(sensor_);
+
+		// Linear copy for now
+		for (int i = 0; i < image.sensor_.rows; i++) {
+			for (int j = 0; j < image.sensor_.cols; j++) {
+				image.rgb_[i * image.sensor_.cols + j] = make_uchar3(rgb.at<cv::Vec3b>(i, j)(2), rgb.at<cv::Vec3b>(i, j)(1), rgb.at<cv::Vec3b>(i, j)(0));
+				image.depth_[i * image.sensor_.cols + j] = depth.at<float>(i, j);
+			}
+		}
+
+		bool *mask;
+		cudaMallocManaged(&mask, sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
+		for (int i = 0; i < image.sensor_.rows * image.sensor_.cols; i++) {
+			mask[i] = false;
+		}
+
+		if (!first_scan_) {
+			cv::Mat current {prev_rgb_frame.size(), CV_8UC1};
+			cv::Mat prev {prev_rgb_frame.size(), CV_8UC1};
+			cv::Mat flow {prev_rgb_frame.size(), CV_32FC2};
+
+			cv::cvtColor(rgb, current, cv::COLOR_BGR2GRAY);
+			cv::cvtColor(prev_rgb_frame, prev, cv::COLOR_BGR2GRAY);
+
+			cv::calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+			int vectorsUsed = 0;
+
+			cv::Point2f avgFlow{0, 0};
+			for (int y = 0; y < current.rows; y++)
+			{
+				for (int x = 0; x < current.cols; x++)
+				{
+					// If the flow at this point is too small, ignore it:
+					if (length(flow.at<cv::Point2f>(y, x)) < 1)
+					{
+						continue;
+					}
+					avgFlow += normalize(flow.at<cv::Point2f>(y, x));
+					vectorsUsed++;
+				}
+			}
+			avgFlow.x /= vectorsUsed;
+			avgFlow.y /= vectorsUsed;
+
+			cv::Mat cvmask(current.size(), CV_8UC1);
+
+			// Now create a binary mask for each pixel if the flow vector is within a certain angle of the average vector:
+			for (int y = 0; y < current.rows; y++)
+			{
+				for (int x = 0; x < current.cols; x++)
+				{
+					cv::Point2f flowatxy = flow.at<cv::Point2f>(y, x);
+					float angle_between = normalize(avgFlow).dot(normalize(flowatxy));
+
+					if (angle_between < 0 && length(flowatxy) > 1)
+					{
+						cvmask.at<uchar>(y, x) = 255;
+					}
+					else
+					{
+						cvmask.at<uchar>(y, x) = 0;
+					}
+				}
+			}
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (cvmask.at<uchar>(i, j) == 255) {
+						mask[i * image.sensor_.cols + j] = true;
+					}
+				}
+			}
+
+			Eigen::Matrix4d prev_pose = pose_;
+			TrackCamera(image, mask);
+		} else {
+			first_scan_ = false;
+		}
+
+		prev_rgb_frame = rgb;
 
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
