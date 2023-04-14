@@ -77,7 +77,7 @@ namespace refusion {
 		 * @param[in]  rgb    The RGB image
 		 * @param[in]  depth  The depth image
 		 */
-		void AddScan(const cv::Mat &rgb, const cv::Mat &depth);
+		virtual void AddScan(const cv::Mat &rgb, const cv::Mat &depth) = 0;
 
 		/**
 		 * @brief      Gets the current pose of the sensor.
@@ -117,7 +117,7 @@ namespace refusion {
 		 *                          created if create_mask is set to true
 		 * @param[in]  create_mask  If true, mask will be created
 		 */
-		void TrackCamera(const RgbdImage &image, bool *mask, bool create_mask);
+		virtual void TrackCamera(const RgbdImage &image, bool *mask, bool create_mask) = 0;
 
 		/** TSDF volume */
 		tsdfvh::TsdfVolume *volume_;
@@ -143,4 +143,17 @@ namespace refusion {
 		Logger *logger_;
 	};
 
+	class ReTracker : public refusion::Tracker
+	{
+	public:
+		ReTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+				  const refusion::TrackerOptions &tracker_options, const refusion::RgbdSensor &sensor, Logger *logger);
+
+		~ReTracker() = default;
+
+		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
+
+	protected:
+		void TrackCamera(const refusion::RgbdImage &image, bool *mask, bool create_mask) override;
+	};
 }  // namespace refusion

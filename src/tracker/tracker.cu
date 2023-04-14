@@ -186,7 +186,153 @@ namespace refusion {
 		}
 	}
 
-	void Tracker::TrackCamera(const RgbdImage &image, bool *mask,
+	/**
+	 * @brief Applies flooding to the mask.
+	 *
+	 * @param depth
+	 * @param mask
+	 * @param threshold
+	 */
+	void ApplyMaskFlood(const cv::Mat &depth, cv::Mat &mask, float threshold)
+	{
+		int erosion_size = 15;
+		cv::Mat erosion_kernel = cv::getStructuringElement(
+				cv::MORPH_ELLIPSE, cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
+				cv::Point(erosion_size, erosion_size));
+		cv::Mat eroded_mask;
+		cv::erode(mask, eroded_mask, erosion_kernel);
+		std::vector <std::pair<int, int>> mask_vector;
+		for (int i = 0; i < depth.rows; i++) {
+			for (int j = 0; j < depth.cols; j++) {
+				mask.at<uchar>(i, j) = 0;
+				if (eroded_mask.at<uchar>(i, j) > 0) {
+					mask_vector.push_back(std::make_pair(i, j));
+				}
+			}
+		}
+
+		while (!mask_vector.empty()) {
+			int i = mask_vector.back().first;
+			int j = mask_vector.back().second;
+			mask_vector.pop_back();
+			if (depth.at<float>(i, j) > 0 && mask.at<uchar>(i, j) == 0) {
+				float old_depth = depth.at<float>(i, j);
+				mask.at<uchar>(i, j) = 255;
+				if (i - 1 >= 0) {  // up
+					if (depth.at<float>(i - 1, j) > 0 && mask.at<uchar>(i - 1, j) == 0 &&
+						fabs(depth.at<float>(i - 1, j) - old_depth) <
+						threshold * old_depth) {
+						mask_vector.push_back(std::make_pair(i - 1, j));
+					}
+				}
+				if (i + 1 < depth.rows) {  // down
+					if (depth.at<float>(i + 1, j) > 0 && mask.at<uchar>(i + 1, j) == 0 &&
+						fabs(depth.at<float>(i + 1, j) - old_depth) <
+						threshold * old_depth) {
+						mask_vector.push_back(std::make_pair(i + 1, j));
+					}
+				}
+				if (j - 1 >= 0) {  // left
+					if (depth.at<float>(i, j - 1) > 0 && mask.at<uchar>(i, j - 1) == 0 &&
+						fabs(depth.at<float>(i, j - 1) - old_depth) <
+						threshold * old_depth) {
+						mask_vector.push_back(std::make_pair(i, j - 1));
+					}
+				}
+				if (j + 1 < depth.cols) {  // right
+					if (depth.at<float>(i, j + 1) > 0 && mask.at<uchar>(i, j + 1) == 0 &&
+						fabs(depth.at<float>(i, j + 1) - old_depth) <
+						threshold * old_depth) {
+						mask_vector.push_back(std::make_pair(i, j + 1));
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * @brief Get the current pose of the camera.
+	 *
+	 * @return the current pose of the camera.
+	 */
+	Eigen::Matrix4d Tracker::GetCurrentPose()
+	{
+		return pose_;
+	}
+
+	/**
+	 * @brief Extract a mesh from the current volume.
+	 *
+	 * @param lower_corner
+	 * @param upper_corner
+	 * @return the mesh.
+	 */
+	tsdfvh::Mesh Tracker::ExtractMesh(const float3 &lower_corner,
+									  const float3 &upper_corner)
+	{
+		return volume_->ExtractMesh(lower_corner, upper_corner);
+	}
+
+	/**
+	 * @brief Generate a virtual RGB image from the current pose.
+	 *
+	 * @param width
+	 * @param height
+	 * @return the virtual RGB image.
+	 */
+	cv::Mat Tracker::GenerateRgb(int width, int height)
+	{
+		Eigen::Matrix4f posef = pose_.cast<float>();
+		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
+		RgbdSensor virtual_sensor;
+		virtual_sensor.rows = height;
+		virtual_sensor.cols = width;
+		virtual_sensor.depth_factor = sensor_.depth_factor;
+		float factor_x = static_cast<float>(virtual_sensor.cols) /
+						 static_cast<float>(sensor_.cols);
+		float factor_y = static_cast<float>(virtual_sensor.rows) /
+						 static_cast<float>(sensor_.rows);
+		virtual_sensor.fx = factor_x * sensor_.fx;
+		virtual_sensor.fy = factor_y * sensor_.fy;
+		virtual_sensor.cx = factor_x * sensor_.cx;
+		virtual_sensor.cy = factor_y * sensor_.cy;
+		uchar3 *virtual_rgb = volume_->GenerateRgb(pose_cuda, virtual_sensor);
+
+		cv::Mat cv_virtual_rgb(virtual_sensor.rows, virtual_sensor.cols, CV_8UC3);
+		for (int i = 0; i < virtual_sensor.rows; i++) {
+			for (int j = 0; j < virtual_sensor.cols; j++) {
+				cv_virtual_rgb.at<cv::Vec3b>(i, j)[2] =
+						virtual_rgb[i * virtual_sensor.cols + j].x;
+				cv_virtual_rgb.at<cv::Vec3b>(i, j)[1] =
+						virtual_rgb[i * virtual_sensor.cols + j].y;
+				cv_virtual_rgb.at<cv::Vec3b>(i, j)[0] =
+						virtual_rgb[i * virtual_sensor.cols + j].z;
+			}
+		}
+
+		return cv_virtual_rgb;
+	}
+
+	/**
+	 * @brief Constructor for ReTracker.
+	 *
+	 * @param tsdf_options
+	 * @param tracker_options
+	 * @param sensor
+	 * @param logger
+	 */
+	ReTracker::ReTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
+					 const TrackerOptions &tracker_options,
+					 const RgbdSensor &sensor,
+					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
+	{}
+
+	/**
+	 * @brief Track the camera using the given image.
+	 *
+	 * @param image
+	 */
+	void ReTracker::TrackCamera(const RgbdImage &image, bool *mask,
 							  bool create_mask)
 	{
 		Vector6d increment, prev_increment;
@@ -256,64 +402,13 @@ namespace refusion {
 		prev_increment_ = increment;
 	}
 
-	void ApplyMaskFlood(const cv::Mat &depth, cv::Mat &mask, float threshold)
-	{
-		int erosion_size = 15;
-		cv::Mat erosion_kernel = cv::getStructuringElement(
-				cv::MORPH_ELLIPSE, cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
-				cv::Point(erosion_size, erosion_size));
-		cv::Mat eroded_mask;
-		cv::erode(mask, eroded_mask, erosion_kernel);
-		std::vector <std::pair<int, int>> mask_vector;
-		for (int i = 0; i < depth.rows; i++) {
-			for (int j = 0; j < depth.cols; j++) {
-				mask.at<uchar>(i, j) = 0;
-				if (eroded_mask.at<uchar>(i, j) > 0) {
-					mask_vector.push_back(std::make_pair(i, j));
-				}
-			}
-		}
-
-		while (!mask_vector.empty()) {
-			int i = mask_vector.back().first;
-			int j = mask_vector.back().second;
-			mask_vector.pop_back();
-			if (depth.at<float>(i, j) > 0 && mask.at<uchar>(i, j) == 0) {
-				float old_depth = depth.at<float>(i, j);
-				mask.at<uchar>(i, j) = 255;
-				if (i - 1 >= 0) {  // up
-					if (depth.at<float>(i - 1, j) > 0 && mask.at<uchar>(i - 1, j) == 0 &&
-						fabs(depth.at<float>(i - 1, j) - old_depth) <
-						threshold * old_depth) {
-						mask_vector.push_back(std::make_pair(i - 1, j));
-					}
-				}
-				if (i + 1 < depth.rows) {  // down
-					if (depth.at<float>(i + 1, j) > 0 && mask.at<uchar>(i + 1, j) == 0 &&
-						fabs(depth.at<float>(i + 1, j) - old_depth) <
-						threshold * old_depth) {
-						mask_vector.push_back(std::make_pair(i + 1, j));
-					}
-				}
-				if (j - 1 >= 0) {  // left
-					if (depth.at<float>(i, j - 1) > 0 && mask.at<uchar>(i, j - 1) == 0 &&
-						fabs(depth.at<float>(i, j - 1) - old_depth) <
-						threshold * old_depth) {
-						mask_vector.push_back(std::make_pair(i, j - 1));
-					}
-				}
-				if (j + 1 < depth.cols) {  // right
-					if (depth.at<float>(i, j + 1) > 0 && mask.at<uchar>(i, j + 1) == 0 &&
-						fabs(depth.at<float>(i, j + 1) - old_depth) <
-						threshold * old_depth) {
-						mask_vector.push_back(std::make_pair(i, j + 1));
-					}
-				}
-			}
-		}
-	}
-
-	void Tracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
+	/**
+	 * @brief Add a new scan to the tracker.
+	 *
+	 * @param rgb
+	 * @param depth
+	 */
+	void ReTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
 	{
 		RgbdImage image;
 		image.Init(sensor_);
@@ -321,16 +416,13 @@ namespace refusion {
 		// Linear copy for now
 		for (int i = 0; i < image.sensor_.rows; i++) {
 			for (int j = 0; j < image.sensor_.cols; j++) {
-				image.rgb_[i * image.sensor_.cols + j] =
-						make_uchar3(rgb.at<cv::Vec3b>(i, j)(2), rgb.at<cv::Vec3b>(i, j)(1),
-									rgb.at<cv::Vec3b>(i, j)(0));
+				image.rgb_[i * image.sensor_.cols + j] = make_uchar3(rgb.at<cv::Vec3b>(i, j)(2), rgb.at<cv::Vec3b>(i, j)(1), rgb.at<cv::Vec3b>(i, j)(0));
 				image.depth_[i * image.sensor_.cols + j] = depth.at<float>(i, j);
 			}
 		}
 
 		bool *mask;
-		cudaMallocManaged(&mask,
-						  sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
+		cudaMallocManaged(&mask, sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
 		for (int i = 0; i < image.sensor_.rows * image.sensor_.cols; i++) {
 			mask[i] = false;
 		}
@@ -339,44 +431,41 @@ namespace refusion {
 			Eigen::Matrix4d prev_pose = pose_;
 			TrackCamera(image, mask, true);
 
-			if(options_.remove_dynamics) {
-				// Remove dynamic objects
-				// (1) Convert mask to cv::Mat
-				cv::Mat cvmask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-				for (int i = 0; i < image.sensor_.rows; i++) {
-					for (int j = 0; j < image.sensor_.cols; j++) {
-						if (mask[i * image.sensor_.cols + j]) {
-							cvmask.at<uchar>(i, j) = 255;
-						}
-						else {
-							cvmask.at<uchar>(i, j) = 0;
-						}
+			cv::Mat cvmask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (mask[i * image.sensor_.cols + j]) {
+						cvmask.at<uchar>(i, j) = 255;
+					} else {
+						cvmask.at<uchar>(i, j) = 0;
 					}
 				}
-
-				ApplyMaskFlood(depth, cvmask, 0.007);
-
-				int dilation_size = 10;
-				cv::Mat dilation_kernel = cv::getStructuringElement(
-						cv::MORPH_ELLIPSE, cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
-						cv::Point(dilation_size, dilation_size));
-				cv::Mat dilated_mask;
-				cv::dilate(cvmask, dilated_mask, dilation_kernel);
-				for (int i = 0; i < image.sensor_.rows; i++) {
-					for (int j = 0; j < image.sensor_.cols; j++) {
-						if (dilated_mask.at<uchar>(i, j) > 0) {
-							mask[i * image.sensor_.cols + j] = false;
-						}
-					}
-
-				}
-				pose_ = prev_pose;
-				TrackCamera(image, mask, false);
 			}
-		}
-		else {
+
+			ApplyMaskFlood(depth, cvmask, 0.007);
+
+			int dilation_size = 10;
+			cv::Mat dilation_kernel = cv::getStructuringElement(
+				cv::MORPH_ELLIPSE, cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
+				cv::Point(dilation_size, dilation_size));
+			cv::dilate(cvmask, cvmask, dilation_kernel);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (cvmask.at<uchar>(i, j) > 0) {
+						mask[i * image.sensor_.cols + j] = true;
+					} else {
+						mask[i * image.sensor_.cols + j] = false;
+					}
+				}
+			}
+
+			pose_ = prev_pose;
+			TrackCamera(image, mask, false);
+		} else {
 			first_scan_ = false;
 		}
+
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
@@ -403,49 +492,4 @@ namespace refusion {
 
 		cudaFree(mask);
 	}
-
-	Eigen::Matrix4d Tracker::GetCurrentPose()
-	{
-		return pose_;
-	}
-
-	tsdfvh::Mesh Tracker::ExtractMesh(const float3 &lower_corner,
-									  const float3 &upper_corner)
-	{
-		return volume_->ExtractMesh(lower_corner, upper_corner);
-	}
-
-	cv::Mat Tracker::GenerateRgb(int width, int height)
-	{
-		Eigen::Matrix4f posef = pose_.cast<float>();
-		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
-		RgbdSensor virtual_sensor;
-		virtual_sensor.rows = height;
-		virtual_sensor.cols = width;
-		virtual_sensor.depth_factor = sensor_.depth_factor;
-		float factor_x = static_cast<float>(virtual_sensor.cols) /
-						 static_cast<float>(sensor_.cols);
-		float factor_y = static_cast<float>(virtual_sensor.rows) /
-						 static_cast<float>(sensor_.rows);
-		virtual_sensor.fx = factor_x * sensor_.fx;
-		virtual_sensor.fy = factor_y * sensor_.fy;
-		virtual_sensor.cx = factor_x * sensor_.cx;
-		virtual_sensor.cy = factor_y * sensor_.cy;
-		uchar3 *virtual_rgb = volume_->GenerateRgb(pose_cuda, virtual_sensor);
-
-		cv::Mat cv_virtual_rgb(virtual_sensor.rows, virtual_sensor.cols, CV_8UC3);
-		for (int i = 0; i < virtual_sensor.rows; i++) {
-			for (int j = 0; j < virtual_sensor.cols; j++) {
-				cv_virtual_rgb.at<cv::Vec3b>(i, j)[2] =
-						virtual_rgb[i * virtual_sensor.cols + j].x;
-				cv_virtual_rgb.at<cv::Vec3b>(i, j)[1] =
-						virtual_rgb[i * virtual_sensor.cols + j].y;
-				cv_virtual_rgb.at<cv::Vec3b>(i, j)[0] =
-						virtual_rgb[i * virtual_sensor.cols + j].z;
-			}
-		}
-
-		return cv_virtual_rgb;
-	}
-
-}  // namespace refusion
+}
