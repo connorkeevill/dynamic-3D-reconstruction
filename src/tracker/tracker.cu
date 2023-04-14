@@ -383,6 +383,7 @@ namespace refusion {
 		if(options_.output_mask_video)
 		{
 			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
 					if (mask[i * image.sensor_.cols + j]) {
@@ -394,6 +395,7 @@ namespace refusion {
 				}
 			}
 
+			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
 			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
 		}
 
