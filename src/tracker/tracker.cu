@@ -497,6 +497,27 @@ namespace refusion {
 		return cv_virtual_rgb;
 	}
 
+	void LogMask(bool *mask)
+	{
+		if (options_.output_mask_video) {
+			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (mask[i * image.sensor_.cols + j]) {
+						output_mask.at<uchar>(i, j) = 255;
+					}
+					else {
+						output_mask.at<uchar>(i, j) = 0;
+					}
+				}
+			}
+
+			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
+			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
+		}
+	}
+
 	/**
 	 * @brief Constructor for ReTracker.
 	 *
@@ -652,24 +673,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		if(options_.output_mask_video)
-		{
-			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (mask[i * image.sensor_.cols + j]) {
-						output_mask.at<uchar>(i, j) = 255;
-					}
-					else {
-						output_mask.at<uchar>(i, j) = 0;
-					}
-				}
-			}
-
-			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
-			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
-		}
+		LogMask(mask);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -790,24 +794,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		if(options_.output_mask_video)
-		{
-			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (mask[i * image.sensor_.cols + j]) {
-						output_mask.at<uchar>(i, j) = 255;
-					}
-					else {
-						output_mask.at<uchar>(i, j) = 0;
-					}
-				}
-			}
-
-			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
-			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
-		}
+		LogMask(mask);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -979,24 +966,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		if(options_.output_mask_video)
-		{
-			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (mask[i * image.sensor_.cols + j]) {
-						output_mask.at<uchar>(i, j) = 255;
-					}
-					else {
-						output_mask.at<uchar>(i, j) = 0;
-					}
-				}
-			}
-
-			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
-			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
-		}
+		LogMask(mask);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 

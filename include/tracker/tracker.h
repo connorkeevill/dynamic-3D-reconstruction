@@ -110,6 +110,9 @@ namespace refusion {
 		cv::Mat GenerateRgb(int width, int height);
 
 	protected:
+		/** Write the mask to the file */
+		void LogMask(bool *mask);
+
 		/** TSDF volume */
 		tsdfvh::TsdfVolume *volume_;
 
