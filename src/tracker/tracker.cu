@@ -434,6 +434,28 @@ namespace refusion {
 		}
 	}
 
+	Eigen::Vector4d projectIntoWorldSpace(int x, int y, float depth, RgbdSensor &sensor)
+	{
+		// Project the 2d point into 3d space
+		Eigen::Vector4d point;
+		point(0) = (x - sensor.cx) * depth / sensor.fx;
+		point(1) = (y - sensor.cy) * depth / sensor.fy;
+		point(2) = depth;
+		point(3) = 1.0f;
+
+		return point;
+	}
+
+	Eigen::Vector2d projectIntoImageSpace(Eigen::Vector4d point, RgbdSensor &sensor)
+	{
+		// Project the 3d point into 2d space
+		Eigen::Vector2d point2d;
+		point2d(0) = (sensor.fx * point(0) / point(2)) + sensor.cx;
+		point2d(1) = (sensor.fy * point(1) / point(2)) + sensor.cy;
+
+		return point2d;
+	}
+
 	/**
 	 * @brief Get the current pose of the camera.
 	 *
@@ -497,7 +519,7 @@ namespace refusion {
 		return cv_virtual_rgb;
 	}
 
-	void LogMask(bool *mask)
+	void Tracker::LogMask(bool *mask, RgbdImage &image)
 	{
 		if (options_.output_mask_video) {
 			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
@@ -673,7 +695,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask);
+		LogMask(mask, image);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -794,7 +816,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask);
+		LogMask(mask, image);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -926,7 +948,105 @@ namespace refusion {
 			avgFlow.x /= vectorsUsed;
 			avgFlow.y /= vectorsUsed;
 
+			cv::Mat flow_parts[2];
+			split(flow, flow_parts);
+			cv::Mat magnitude, angle, magn_norm;
+			cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
+			normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
+			angle *= ((1.f / 360.f) * (180.f / 255.f));
+			//build hsv image
+			cv::Mat _hsv[3], hsv, hsv8, bgr;
+			_hsv[0] = angle;
+			_hsv[1] = cv::Mat::ones(angle.size(), CV_32F);
+			_hsv[2] = magn_norm;
+			merge(_hsv, 3, hsv);
+			hsv.convertTo(hsv8, CV_8U, 255.0);
+			cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
+
+			logger_->addFrameToOutputVideo(bgr, "farneback-flow-field.avi");
+
 			cv::Mat cvmask(current.size(), CV_8UC1);
+
+			// ----------------- It's about to get messy -----------------
+
+
+			Eigen::Matrix4d previousPose = pose_;
+			TrackCamera(image, mask);
+
+			Eigen::Matrix4d inverse = previousPose.inverse();
+			Eigen::Matrix4d increment = pose_ * inverse;
+
+			cv::Mat poseFlow = cv::Mat{current.size(), CV_32FC2};
+
+			logger_->debugLog("current size: " + std::to_string(current.rows) + ", " + std::to_string(current.cols));
+
+			for (int y = 0; y < current.rows; y++)
+			{
+				for (int x = 0; x < current.cols; x++)
+				{
+					logger_->debugLog("Current x: " + std::to_string(x) + ", y: " + std::to_string(y));
+					logger_->debugLog("Inside loop");
+
+					if (prev_depth_frame.at<float>(y, x) == 0) {continue;}
+					Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame.at<float>(y, x), image.sensor_);
+
+					logger_->debugLog("Point projected into world space");
+
+					Eigen::Vector4d transformedPoint = increment * point;
+					transformedPoint = transformedPoint / transformedPoint(3);
+
+					logger_->debugLog("Point transformed");
+
+					Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, image.sensor_);
+
+					logger_->debugLog("Point projected into image space");
+
+					poseFlow.at<cv::Point2f>(y, x) = cv::Point2f{x - transformedPoint2D.x(), y - transformedPoint2D.y()};
+
+					logger_->debugLog("Point added to flow");
+				}
+			}
+
+			cv::Mat pose_flow_parts[2];
+			split(poseFlow, pose_flow_parts);
+			cv::Mat magnitude1, angle1, magn_norm1;
+			cartToPolar(pose_flow_parts[0], pose_flow_parts[1], magnitude1, angle1, true);
+			normalize(magnitude1, magn_norm1, 0.0f, 1.0f, cv::NORM_MINMAX);
+			angle1 *= ((1.f / 360.f) * (180.f / 255.f));
+			//build hsv image
+			cv::Mat _hsv1[3], hsv1, hsv81, bgr1;
+			_hsv1[0] = angle1;
+			_hsv1[1] = cv::Mat::ones(angle1.size(), CV_32F);
+			_hsv1[2] = magn_norm1;
+			merge(_hsv1, 3, hsv1);
+			hsv1.convertTo(hsv81, CV_8U, 255.0);
+			cvtColor(hsv81, bgr1, cv::COLOR_HSV2BGR);
+
+			logger_->addFrameToOutputVideo(bgr1, "CPE-flow-field.avi");
+
+			cv::Mat poseFlowMask(current.size(), CV_32FC2);
+
+			// Now subtract the pose flow from the optical flow:
+			poseFlowMask = flow - poseFlow;
+
+			cv::Mat pose_flow_parts1[2];
+			split(poseFlowMask, pose_flow_parts1);
+			cv::Mat magnitude2, angle2, magn_norm2;
+			cartToPolar(pose_flow_parts1[0], pose_flow_parts1[1], magnitude2, angle2, true);
+			normalize(magnitude2, magn_norm2, 0.0f, 1.0f, cv::NORM_MINMAX);
+			angle2 *= ((1.f / 360.f) * (180.f / 255.f));
+			//build hsv image
+			cv::Mat _hsv2[3], hsv2, hsv82, bgr2;
+			_hsv2[0] = angle2;
+			_hsv2[1] = cv::Mat::ones(angle2.size(), CV_32F);
+			_hsv2[2] = magn_norm2;
+			merge(_hsv2, 3, hsv2);
+			hsv2.convertTo(hsv82, CV_8U, 255.0);
+			cvtColor(hsv82, bgr2, cv::COLOR_HSV2BGR);
+
+			logger_->addFrameToOutputVideo(bgr2, "CPE-flow-field-diff.avi");
+
+			// Messiness over
 
 			// Now create a binary mask for each pixel if the flow vector is within a certain angle of the average vector:
 			for (int y = 0; y < current.rows; y++)
@@ -961,12 +1081,13 @@ namespace refusion {
 			first_scan_ = false;
 		}
 
+		prev_depth_frame = depth;
 		prev_rgb_frame = rgb;
 
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask);
+		LogMask(mask, image);
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 

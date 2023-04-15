@@ -10,6 +10,7 @@
 #endif
 
 #include <Eigen/Core>
+#include <Eigen/LU>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
@@ -111,7 +112,7 @@ namespace refusion {
 
 	protected:
 		/** Write the mask to the file */
-		void LogMask(bool *mask);
+		void LogMask(bool *mask, RgbdImage &image);
 
 		/** TSDF volume */
 		tsdfvh::TsdfVolume *volume_;
@@ -196,7 +197,7 @@ namespace refusion {
 	protected:
 		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
 		cv::Mat prev_rgb_frame;
-
+		cv::Mat prev_depth_frame;
 	};
 
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
