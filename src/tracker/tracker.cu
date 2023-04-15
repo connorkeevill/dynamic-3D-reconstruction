@@ -293,7 +293,6 @@ namespace refusion {
 			// but here we're using a mask instead.
 			if(mask[i])
 			{
-				cout << "mask is true" << endl;
 				continue;
 			}
 			mat1x3 gradient;
