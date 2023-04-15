@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/cudaoptflow.hpp>
 #include "tracker/eigen_wrapper.h"
 #include "utils/matrix_utils.h"
 #include "utils/utils.h"
@@ -835,6 +837,62 @@ namespace refusion {
 					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
 	{}
 
+	cv::Mat GPUOpticalFlow(cv::Mat P, cv::Mat C)
+	{
+		cv::cuda::GpuMat current, previous, flow;
+		cv::cuda::GpuMat d_P(P);
+		cv::cuda::GpuMat d_C(C);
+
+		cv::cuda::cvtColor(d_C, current, cv::COLOR_BGR2GRAY);
+		cv::cuda::cvtColor(d_P, previous, cv::COLOR_BGR2GRAY);
+
+		cv::Ptr<cv::cuda::FarnebackOpticalFlow> farn = cv::cuda::FarnebackOpticalFlow::create();
+		farn->setPyrScale(0.5);
+		farn->setNumLevels(3);
+		farn->setWinSize(15);
+		farn->setNumIters(3);
+		farn->setPolyN(5);
+		farn->setPolySigma(1.2);
+
+		farn->calc(previous, current, flow);
+
+		cv::Mat result;
+		flow.download(result);
+
+		return result;
+	}
+
+	cv::Mat GPUVisualizeFlowField(cv::Mat flow)
+	{
+		cv::cuda::GpuMat d_flow(flow);
+		cv::cuda::GpuMat d_flow_parts[2];
+
+		cv::cuda::split(d_flow, d_flow_parts);
+
+		cv::cuda::GpuMat d_magnitude, d_angle, d_magn_norm;
+		cv::cuda::cartToPolar(d_flow_parts[0], d_flow_parts[1], d_magnitude, d_angle, true);
+		cv::cuda::normalize(d_magnitude, d_magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX, -1, cv::Mat());
+		d_angle.convertTo(d_angle, d_angle.type(), ((1.f / 360.f) * (180.f / 255.f)));
+
+		//build hsv image
+		cv::Mat h_ones = cv::Mat::ones(d_flow_parts[0].size(), CV_32F);
+		cv::cuda::GpuMat d_ones;
+		d_ones.upload(h_ones);
+
+		cv::cuda::GpuMat d_hsv[3], d_hsv8, d_bgr;
+		d_hsv[0] = d_angle;
+		d_hsv[1] = d_ones;
+		d_hsv[2] = d_magn_norm;
+		cv::cuda::merge(d_hsv, 3, d_hsv8);
+		cv::cuda::cvtColor(d_hsv8, d_bgr, cv::COLOR_HSV2BGR);
+
+		cv::Mat bgr;
+		d_bgr.download(bgr);
+
+		return bgr;
+	}
+
+
 	/**
 	 * @brief Tracks the camera using optical flow.
 	 *
@@ -919,56 +977,15 @@ namespace refusion {
 			mask[i] = false;
 		}
 
+
+
 		if (!first_scan_) {
-			cv::Mat current {prev_rgb_frame.size(), CV_8UC1};
-			cv::Mat prev {prev_rgb_frame.size(), CV_8UC1};
-			cv::Mat flow {prev_rgb_frame.size(), CV_32FC2};
+			cv::Mat farnbackFlowField = GPUOpticalFlow(prev_rgb_frame, rgb);
+			cv::Mat farnbackFlowFrame = GPUVisualizeFlowField(farnbackFlowField);
 
-			cv::cvtColor(rgb, current, cv::COLOR_BGR2GRAY);
-			cv::cvtColor(prev_rgb_frame, prev, cv::COLOR_BGR2GRAY);
-
-			cv::calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-
-			int vectorsUsed = 0;
-
-			cv::Point2f avgFlow{0, 0};
-			for (int y = 0; y < current.rows; y++)
-			{
-				for (int x = 0; x < current.cols; x++)
-				{
-					// If the flow at this point is too small, ignore it:
-					if (length(flow.at<cv::Point2f>(y, x)) < 1)
-					{
-						continue;
-					}
-					avgFlow += normalize(flow.at<cv::Point2f>(y, x));
-					vectorsUsed++;
-				}
-			}
-			avgFlow.x /= vectorsUsed;
-			avgFlow.y /= vectorsUsed;
-
-			cv::Mat flow_parts[2];
-			split(flow, flow_parts);
-			cv::Mat magnitude, angle, magn_norm;
-			cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
-			normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
-			angle *= ((1.f / 360.f) * (180.f / 255.f));
-			//build hsv image
-			cv::Mat _hsv[3], hsv, hsv8, bgr;
-			_hsv[0] = angle;
-			_hsv[1] = cv::Mat::ones(angle.size(), CV_32F);
-			_hsv[2] = magn_norm;
-			merge(_hsv, 3, hsv);
-			hsv.convertTo(hsv8, CV_8U, 255.0);
-			cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
-
-			logger_->addFrameToOutputVideo(bgr, "farneback-flow-field.avi");
-
-			cv::Mat cvmask(current.size(), CV_8UC1);
+			logger_->addFrameToOutputVideo(farnbackFlowFrame, "farnback-flow");
 
 			// ----------------- It's about to get messy -----------------
-
 
 			Eigen::Matrix4d previousPose = pose_;
 			TrackCamera(image, mask);
@@ -976,34 +993,21 @@ namespace refusion {
 			Eigen::Matrix4d inverse = previousPose.inverse();
 			Eigen::Matrix4d increment = pose_ * inverse;
 
-			cv::Mat poseFlow = cv::Mat{current.size(), CV_32FC2};
+			cv::Mat poseFlow = cv::Mat{rgb.size(), CV_32FC2};
 
-			logger_->debugLog("current size: " + std::to_string(current.rows) + ", " + std::to_string(current.cols));
-
-			for (int y = 0; y < current.rows; y++)
+			for (int y = 0; y < rgb.rows; y++)
 			{
-				for (int x = 0; x < current.cols; x++)
+				for (int x = 0; x < rgb.cols; x++)
 				{
-					logger_->debugLog("Current x: " + std::to_string(x) + ", y: " + std::to_string(y));
-					logger_->debugLog("Inside loop");
-
 					if (prev_depth_frame.at<float>(y, x) == 0) {continue;}
 					Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame.at<float>(y, x), image.sensor_);
-
-					logger_->debugLog("Point projected into world space");
 
 					Eigen::Vector4d transformedPoint = increment * point;
 					transformedPoint = transformedPoint / transformedPoint(3);
 
-					logger_->debugLog("Point transformed");
-
 					Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, image.sensor_);
 
-					logger_->debugLog("Point projected into image space");
-
 					poseFlow.at<cv::Point2f>(y, x) = cv::Point2f{x - transformedPoint2D.x(), y - transformedPoint2D.y()};
-
-					logger_->debugLog("Point added to flow");
 				}
 			}
 
@@ -1024,10 +1028,10 @@ namespace refusion {
 
 			logger_->addFrameToOutputVideo(bgr1, "CPE-flow-field.avi");
 
-			cv::Mat poseFlowMask(current.size(), CV_32FC2);
+			cv::Mat poseFlowMask(rgb.size(), CV_32FC2);
 
 			// Now subtract the pose flow from the optical flow:
-			poseFlowMask = flow - poseFlow;
+			poseFlowMask = farnbackFlowField - poseFlow;
 
 			cv::Mat pose_flow_parts1[2];
 			split(poseFlowMask, pose_flow_parts1);
@@ -1047,33 +1051,6 @@ namespace refusion {
 			logger_->addFrameToOutputVideo(bgr2, "CPE-flow-field-diff.avi");
 
 			// Messiness over
-
-			// Now create a binary mask for each pixel if the flow vector is within a certain angle of the average vector:
-			for (int y = 0; y < current.rows; y++)
-			{
-				for (int x = 0; x < current.cols; x++)
-				{
-					cv::Point2f flowatxy = flow.at<cv::Point2f>(y, x);
-					float angle_between = normalize(avgFlow).dot(normalize(flowatxy));
-
-					if (angle_between < 0 && length(flowatxy) > 1)
-					{
-						cvmask.at<uchar>(y, x) = 255;
-					}
-					else
-					{
-						cvmask.at<uchar>(y, x) = 0;
-					}
-				}
-			}
-
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (cvmask.at<uchar>(i, j) == 255) {
-						mask[i * image.sensor_.cols + j] = true;
-					}
-				}
-			}
 
 			Eigen::Matrix4d prev_pose = pose_;
 			TrackCamera(image, mask);
