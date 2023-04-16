@@ -862,36 +862,27 @@ namespace refusion {
 		return result;
 	}
 
-	cv::Mat GPUVisualizeFlowField(cv::Mat flow)
+	cv::Mat visualizeFLowField(cv::Mat flow)
 	{
-		cv::cuda::GpuMat d_flow(flow);
-		cv::cuda::GpuMat d_flow_parts[2];
-
-		cv::cuda::split(d_flow, d_flow_parts);
-
-		cv::cuda::GpuMat d_magnitude, d_angle, d_magn_norm;
-		cv::cuda::cartToPolar(d_flow_parts[0], d_flow_parts[1], d_magnitude, d_angle, true);
-		cv::cuda::normalize(d_magnitude, d_magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX, -1, cv::Mat());
-		d_angle.convertTo(d_angle, d_angle.type(), ((1.f / 360.f) * (180.f / 255.f)));
+		cv::Mat flow_parts[2];
+		split(flow, flow_parts);
+		cv::Mat magnitude, angle, magn_norm;
+		cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
+		normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
+		angle *= ((1.f / 360.f) * (180.f / 255.f));
 
 		//build hsv image
-		cv::Mat h_ones = cv::Mat::ones(d_flow_parts[0].size(), CV_32F);
-		cv::cuda::GpuMat d_ones;
-		d_ones.upload(h_ones);
+		cv::Mat _hsv[3], hsv, hsv8, bgr;
+		_hsv[0] = angle;
+		_hsv[1] = cv::Mat::ones(angle.size(), CV_32F);
+		_hsv[2] = magn_norm;
+		merge(_hsv, 3, hsv);
+		hsv.convertTo(hsv8, CV_8U, 255.0);
 
-		cv::cuda::GpuMat d_hsv[3], d_hsv8, d_bgr;
-		d_hsv[0] = d_angle;
-		d_hsv[1] = d_ones;
-		d_hsv[2] = d_magn_norm;
-		cv::cuda::merge(d_hsv, 3, d_hsv8);
-		cv::cuda::cvtColor(d_hsv8, d_bgr, cv::COLOR_HSV2BGR);
-
-		cv::Mat bgr;
-		d_bgr.download(bgr);
+		cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
 
 		return bgr;
 	}
-
 
 	/**
 	 * @brief Tracks the camera using optical flow.
@@ -977,11 +968,9 @@ namespace refusion {
 			mask[i] = false;
 		}
 
-
-
 		if (!first_scan_) {
 			cv::Mat farnbackFlowField = GPUOpticalFlow(prev_rgb_frame, rgb);
-			cv::Mat farnbackFlowFrame = GPUVisualizeFlowField(farnbackFlowField);
+			cv::Mat farnbackFlowFrame = visualizeFLowField(farnbackFlowField);
 
 			logger_->addFrameToOutputVideo(farnbackFlowFrame, "farnback-flow");
 
@@ -1011,44 +1000,16 @@ namespace refusion {
 				}
 			}
 
-			cv::Mat pose_flow_parts[2];
-			split(poseFlow, pose_flow_parts);
-			cv::Mat magnitude1, angle1, magn_norm1;
-			cartToPolar(pose_flow_parts[0], pose_flow_parts[1], magnitude1, angle1, true);
-			normalize(magnitude1, magn_norm1, 0.0f, 1.0f, cv::NORM_MINMAX);
-			angle1 *= ((1.f / 360.f) * (180.f / 255.f));
-			//build hsv image
-			cv::Mat _hsv1[3], hsv1, hsv81, bgr1;
-			_hsv1[0] = angle1;
-			_hsv1[1] = cv::Mat::ones(angle1.size(), CV_32F);
-			_hsv1[2] = magn_norm1;
-			merge(_hsv1, 3, hsv1);
-			hsv1.convertTo(hsv81, CV_8U, 255.0);
-			cvtColor(hsv81, bgr1, cv::COLOR_HSV2BGR);
-
-			logger_->addFrameToOutputVideo(bgr1, "CPE-flow-field.avi");
+			cv::Mat poseFlowFrame = visualizeFLowField(poseFlow);
+			logger_->addFrameToOutputVideo(poseFlowFrame, "CPE-flow-field.avi");
 
 			cv::Mat poseFlowMask(rgb.size(), CV_32FC2);
 
 			// Now subtract the pose flow from the optical flow:
 			poseFlowMask = farnbackFlowField - poseFlow;
 
-			cv::Mat pose_flow_parts1[2];
-			split(poseFlowMask, pose_flow_parts1);
-			cv::Mat magnitude2, angle2, magn_norm2;
-			cartToPolar(pose_flow_parts1[0], pose_flow_parts1[1], magnitude2, angle2, true);
-			normalize(magnitude2, magn_norm2, 0.0f, 1.0f, cv::NORM_MINMAX);
-			angle2 *= ((1.f / 360.f) * (180.f / 255.f));
-			//build hsv image
-			cv::Mat _hsv2[3], hsv2, hsv82, bgr2;
-			_hsv2[0] = angle2;
-			_hsv2[1] = cv::Mat::ones(angle2.size(), CV_32F);
-			_hsv2[2] = magn_norm2;
-			merge(_hsv2, 3, hsv2);
-			hsv2.convertTo(hsv82, CV_8U, 255.0);
-			cvtColor(hsv82, bgr2, cv::COLOR_HSV2BGR);
-
-			logger_->addFrameToOutputVideo(bgr2, "CPE-flow-field-diff.avi");
+			cv::Mat poseFlowMaskFrame = visualizeFLowField(poseFlowMask);
+			logger_->addFrameToOutputVideo(poseFlowMaskFrame, "CPE-flow-field-diff.avi");
 
 			// Messiness over
 
