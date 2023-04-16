@@ -11,6 +11,8 @@ RUN apt install -y python3-pip
 RUN apt install -y nvidia-cuda-gdb
 RUN apt install -y gdb
 
+# OpenCV installation instructions taken from here: https://github.com/JulianAssmann/opencv-cuda-docker/blob/master/ubuntu-18.04/opencv-3.3.1/cuda-10.0/devel/Dockerfile
+# (Thanks JulianAssmann!)
 ARG OPENCV_VERSION=3.3.1
 
 RUN apt-get update && apt-get upgrade -y &&\
