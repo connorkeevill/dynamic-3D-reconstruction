@@ -837,6 +837,12 @@ namespace refusion {
 					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
 	{}
 
+	/**
+	 * @brief Runs on the GPU to calculate optical flow between the previous (P) and current (C) images.
+	 * @param P
+	 * @param C
+	 * @return
+	 */
 	cv::Mat GPUOpticalFlow(cv::Mat P, cv::Mat C)
 	{
 		cv::cuda::GpuMat current, previous, flow;
@@ -862,6 +868,12 @@ namespace refusion {
 		return result;
 	}
 
+	/**
+	 * @brief Returns a HSV image of the optical flow field.
+	 *
+	 * @param flow
+	 * @return
+	 */
 	cv::Mat visualizeFLowField(cv::Mat flow)
 	{
 		cv::Mat flow_parts[2];
@@ -882,6 +894,39 @@ namespace refusion {
 		cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
 
 		return bgr;
+	}
+
+	/**
+	 * @brief Creates an "optical flow" estimate of the image by applying the transformation (from CPE) to the previous
+	 * image.
+	 *
+	 * @param increment
+	 * @param prev_depth_frame
+	 * @param sensor
+	 * @return
+	 */
+	cv::Mat EstimateFlowWithCPE(Eigen::Matrix4d increment, cv::Mat prev_depth_frame, RgbdSensor sensor)
+	{
+		cv::Mat poseFlow(prev_depth_frame.rows, prev_depth_frame.cols, CV_32FC2, cv::Scalar(0,0));
+
+		for (int y = 0; y < prev_depth_frame.rows; y++)
+		{
+			for (int x = 0; x < prev_depth_frame.cols; x++)
+			{
+				if (prev_depth_frame.at<float>(y, x) == 0) {continue;}
+
+				Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame.at<float>(y, x), sensor);
+
+				Eigen::Vector4d transformedPoint = increment * point;
+				transformedPoint = transformedPoint / transformedPoint(3);
+
+				Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
+
+				poseFlow.at<cv::Point2f>(y, x) = cv::Point2f{x - transformedPoint2D.x(), y - transformedPoint2D.y()};
+			}
+		}
+
+		return poseFlow;
 	}
 
 	/**
@@ -982,31 +1027,15 @@ namespace refusion {
 			Eigen::Matrix4d inverse = previousPose.inverse();
 			Eigen::Matrix4d increment = pose_ * inverse;
 
-			cv::Mat poseFlow = cv::Mat{rgb.size(), CV_32FC2};
+			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
 
-			for (int y = 0; y < rgb.rows; y++)
-			{
-				for (int x = 0; x < rgb.cols; x++)
-				{
-					if (prev_depth_frame.at<float>(y, x) == 0) {continue;}
-					Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame.at<float>(y, x), image.sensor_);
-
-					Eigen::Vector4d transformedPoint = increment * point;
-					transformedPoint = transformedPoint / transformedPoint(3);
-
-					Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, image.sensor_);
-
-					poseFlow.at<cv::Point2f>(y, x) = cv::Point2f{x - transformedPoint2D.x(), y - transformedPoint2D.y()};
-				}
-			}
-
-			cv::Mat poseFlowFrame = visualizeFLowField(poseFlow);
+			cv::Mat poseFlowFrame = visualizeFLowField(poseFlowB);
 			logger_->addFrameToOutputVideo(poseFlowFrame, "CPE-flow-field.avi");
 
 			cv::Mat poseFlowMask(rgb.size(), CV_32FC2);
 
 			// Now subtract the pose flow from the optical flow:
-			poseFlowMask = farnbackFlowField - poseFlow;
+			poseFlowMask = farnbackFlowField - poseFlowB;
 
 			cv::Mat poseFlowMaskFrame = visualizeFLowField(poseFlowMask);
 			logger_->addFrameToOutputVideo(poseFlowMaskFrame, "CPE-flow-field-diff.avi");
