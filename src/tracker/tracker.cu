@@ -436,6 +436,34 @@ namespace refusion {
 		}
 	}
 
+	/**
+	 * @brief Returns a HSV image of the optical flow field.
+	 *
+	 * @param flow
+	 * @return
+	 */
+	cv::Mat visualizeFLowField(cv::Mat flow)
+	{
+		cv::Mat flow_parts[2];
+		split(flow, flow_parts);
+		cv::Mat magnitude, angle, magn_norm;
+		cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
+		normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
+		angle *= ((1.f / 360.f) * (180.f / 255.f));
+
+		//build hsv image
+		cv::Mat _hsv[3], hsv, hsv8, bgr;
+		_hsv[0] = angle;
+		_hsv[1] = cv::Mat::ones(angle.size(), CV_32F);
+		_hsv[2] = magn_norm;
+		merge(_hsv, 3, hsv);
+		hsv.convertTo(hsv8, CV_8U, 255.0);
+
+		cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
+
+		return bgr;
+	}
+
 	__host__ __device__ Eigen::Vector4d projectIntoWorldSpace(int x, int y, float depth, RgbdSensor &sensor)
 	{
 		// Project the 2d point into 3d space
@@ -521,6 +549,12 @@ namespace refusion {
 		return cv_virtual_rgb;
 	}
 
+	/**
+	 * Logs the mask to an output video if the options are set.
+	 *
+	 * @param mask
+	 * @param image
+	 */
 	void Tracker::LogMask(bool *mask, RgbdImage &image)
 	{
 		if (options_.output_mask_video) {
@@ -539,6 +573,20 @@ namespace refusion {
 
 			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
 			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
+		}
+	}
+
+	/**
+	 * Logs the flow to an output file if the options are set.
+	 *
+	 * @param flowField
+	 * @param name
+	 */
+	void Tracker::LogFlowField(cv::Mat &flowField, string name)
+	{
+		if (options_.output_flow_video) {
+			cv::Mat flowFieldFrame = visualizeFLowField(flowField);
+			logger_->addFrameToOutputVideo(flowFieldFrame, name);
 		}
 	}
 
@@ -868,7 +916,15 @@ namespace refusion {
 		return result;
 	}
 
-__global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_depth_frame, RgbdSensor sensor, float *flow)
+	/**
+	 * @brief Runs on the GPU to estimate optical flow using estimated camera pose.
+	 *
+	 * @param increment
+	 * @param prev_depth_frame
+	 * @param sensor
+	 * @param flow
+	 */
+	__global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_depth_frame, RgbdSensor sensor, float *flow)
 	{
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
@@ -890,34 +946,6 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 			flow[idx * 2] = X;
         	flow[idx * 2 + 1] = y - transformedPoint2D.y();
 		}
-	}
-
-	/**
-	 * @brief Returns a HSV image of the optical flow field.
-	 *
-	 * @param flow
-	 * @return
-	 */
-	cv::Mat visualizeFLowField(cv::Mat flow)
-	{
-		cv::Mat flow_parts[2];
-		split(flow, flow_parts);
-		cv::Mat magnitude, angle, magn_norm;
-		cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
-		normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
-		angle *= ((1.f / 360.f) * (180.f / 255.f));
-
-		//build hsv image
-		cv::Mat _hsv[3], hsv, hsv8, bgr;
-		_hsv[0] = angle;
-		_hsv[1] = cv::Mat::ones(angle.size(), CV_32F);
-		_hsv[2] = magn_norm;
-		merge(_hsv, 3, hsv);
-		hsv.convertTo(hsv8, CV_8U, 255.0);
-
-		cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
-
-		return bgr;
 	}
 
 	/**
@@ -1049,11 +1077,7 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 
 		if (!first_scan_) {
 			cv::Mat farnbackFlowField = GPUOpticalFlow(prev_rgb_frame, rgb);
-			cv::Mat farnbackFlowFrame = visualizeFLowField(farnbackFlowField);
-
-			logger_->addFrameToOutputVideo(farnbackFlowFrame, "farnback-flow");
-
-			// ----------------- It's about to get messy -----------------
+			LogFlowField(farnbackFlowField, "farnback-flow");
 
 			Eigen::Matrix4d previousPose = pose_;
 			TrackCamera(image, mask);
@@ -1062,19 +1086,13 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 			Eigen::Matrix4d increment = pose_ * inverse;
 
 			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
-
-			cv::Mat poseFlowFrame = visualizeFLowField(poseFlowB);
-			logger_->addFrameToOutputVideo(poseFlowFrame, "CPE-flow-field.avi");
+			LogFlowField(poseFlowB, "pose-flow");
 
 			cv::Mat poseFlowMask(rgb.size(), CV_32FC2);
 
 			// Now subtract the pose flow from the optical flow:
 			poseFlowMask = farnbackFlowField - poseFlowB;
-
-			cv::Mat poseFlowMaskFrame = visualizeFLowField(poseFlowMask);
-			logger_->addFrameToOutputVideo(poseFlowMaskFrame, "CPE-flow-field-diff.avi");
-
-			// Messiness over
+			LogFlowField(poseFlowMask, "pose-flow-field");
 		} else {
 			first_scan_ = false;
 		}

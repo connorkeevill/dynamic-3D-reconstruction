@@ -49,6 +49,9 @@ namespace refusion {
 
 		/** Whether to use output the mask used for dynamic removal **/
 		bool output_mask_video;
+
+		/** Whether to output the flow videos representing the optical flow through the image **/
+		bool output_flow_video;
 	};
 
 /**
@@ -113,6 +116,9 @@ namespace refusion {
 	protected:
 		/** Write the mask to the file */
 		void LogMask(bool *mask, RgbdImage &image);
+
+		/** Write the flow to the file */
+		void LogFlowField(cv::Mat &flow, string name);
 
 		/** TSDF volume */
 		tsdfvh::TsdfVolume *volume_;
