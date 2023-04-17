@@ -1077,7 +1077,7 @@ namespace refusion {
 
 		if (!first_scan_) {
 			cv::Mat farnbackFlowField = GPUOpticalFlow(prev_rgb_frame, rgb);
-			LogFlowField(farnbackFlowField, "farnback-flow");
+			LogFlowField(farnbackFlowField, "optical-flow");
 
 			Eigen::Matrix4d previousPose = pose_;
 			TrackCamera(image, mask);
@@ -1088,11 +1088,23 @@ namespace refusion {
 			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
 			LogFlowField(poseFlowB, "pose-flow");
 
-			cv::Mat poseFlowMask(rgb.size(), CV_32FC2);
+			cv::Mat poseFlowMask(farnbackFlowField.size(), CV_32FC2);
 
-			// Now subtract the pose flow from the optical flow:
-			poseFlowMask = farnbackFlowField - poseFlowB;
-			LogFlowField(poseFlowMask, "pose-flow-field");
+			// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
+			for (int i = 0; i < farnbackFlowField.rows; i++) {
+				for (int j = 0; j < farnbackFlowField.cols; j++) {
+					// Optical flow has a lot of areas where there is no motion observed (e.g. in the middle of an object).
+					// We exclude these areas from the difference, to avoid introducing fake flow.
+					if (length(farnbackFlowField.at<cv::Point2f>(i, j)) < 2 || length(poseFlowB.at<cv::Point2f>(i, j)) < 1) {
+						poseFlowMask.at<cv::Point2f>(i, j) = cv::Point2f(0, 0);
+					}
+					else {
+						poseFlowMask.at<cv::Point2f>(i, j) = farnbackFlowField.at<cv::Point2f>(i, j) - poseFlowB.at<cv::Point2f>(i, j);
+					}
+				}
+			}
+
+			LogFlowField(poseFlowMask, "difference-flow");
 		} else {
 			first_scan_ = false;
 		}
