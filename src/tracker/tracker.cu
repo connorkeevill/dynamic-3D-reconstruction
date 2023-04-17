@@ -436,7 +436,7 @@ namespace refusion {
 		}
 	}
 
-	Eigen::Vector4d projectIntoWorldSpace(int x, int y, float depth, RgbdSensor &sensor)
+	__host__ __device__ Eigen::Vector4d projectIntoWorldSpace(int x, int y, float depth, RgbdSensor &sensor)
 	{
 		// Project the 2d point into 3d space
 		Eigen::Vector4d point;
@@ -448,7 +448,7 @@ namespace refusion {
 		return point;
 	}
 
-	Eigen::Vector2d projectIntoImageSpace(Eigen::Vector4d point, RgbdSensor &sensor)
+	__host__ __device__ Eigen::Vector2d projectIntoImageSpace(Eigen::Vector4d point, RgbdSensor &sensor)
 	{
 		// Project the 3d point into 2d space
 		Eigen::Vector2d point2d;
@@ -868,6 +868,27 @@ namespace refusion {
 		return result;
 	}
 
+__global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_depth_frame, RgbdSensor sensor, float *flow)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		int stride = blockDim.x * gridDim.x;
+		int size = sensor.rows * sensor.cols;
+		for (int idx = index; idx < size; idx += stride) {
+			if (prev_depth_frame[idx] == 0) { continue; }
+
+			int x = idx % sensor.cols;
+			int y = idx / sensor.cols;
+
+			Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame[idx], sensor);
+			Eigen::Vector4d transformedPoint = (increment) * point;
+			transformedPoint = transformedPoint / transformedPoint(3);
+			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
+
+			flow[idx * 2] = x - transformedPoint2D.x();
+        	flow[idx * 2 + 1] = y - transformedPoint2D.y();
+		}
+	}
+
 	/**
 	 * @brief Returns a HSV image of the optical flow field.
 	 *
@@ -907,26 +928,36 @@ namespace refusion {
 	 */
 	cv::Mat EstimateFlowWithCPE(Eigen::Matrix4d increment, cv::Mat prev_depth_frame, RgbdSensor sensor)
 	{
-		cv::Mat poseFlow(prev_depth_frame.rows, prev_depth_frame.cols, CV_32FC2, cv::Scalar(0,0));
+		// Allocate memory on the device. We multiply by 2 because we need to store the x and y components of the flow.
+		float *flow_d;
+		cudaMallocManaged(&flow_d, sizeof(float) * prev_depth_frame.rows * prev_depth_frame.cols * 2);
 
-		for (int y = 0; y < prev_depth_frame.rows; y++)
+		// Allocate memory on the GPU for the depth array
+		float *depth_d;
+		cudaMallocManaged(&depth_d, sizeof(float) * prev_depth_frame.rows * prev_depth_frame.cols);
+		// We can do this as cv::Mat created by imread (which a depth frame is) is continuous:
+		// https://answers.opencv.org/question/22742/create-a-memory-continuous-cvmat-any-api-could-do-that/
+		depth_d = prev_depth_frame.ptr<float>(0);
+		for(int point = 0; point < sensor.rows * sensor.cols; point++)
 		{
-			for (int x = 0; x < prev_depth_frame.cols; x++)
-			{
-				if (prev_depth_frame.at<float>(y, x) == 0) {continue;}
-
-				Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame.at<float>(y, x), sensor);
-
-				Eigen::Vector4d transformedPoint = increment * point;
-				transformedPoint = transformedPoint / transformedPoint(3);
-
-				Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
-
-				poseFlow.at<cv::Point2f>(y, x) = cv::Point2f{x - transformedPoint2D.x(), y - transformedPoint2D.y()};
-			}
+			depth_d[point] = prev_depth_frame.at<float>(point);
 		}
 
-		return poseFlow;
+		int threads_per_block = THREADS_PER_BLOCK3;
+		int thread_blocks = (sensor.cols * sensor.rows + threads_per_block - 1) / threads_per_block;
+		estimate_flow_kernel<<<thread_blocks, threads_per_block>>>(increment, depth_d, sensor, flow_d);
+		cudaDeviceSynchronize();
+
+		// Copy the data back to the host
+		cv::Mat flow(prev_depth_frame.rows, prev_depth_frame.cols, CV_32FC2, cv::Scalar(0,0));
+		for(int point = 0; point < sensor.rows * sensor.cols; point++)
+		{
+			flow.at<cv::Point2f>(point) = cv::Point2f{flow_d[point * 2], flow_d[point * 2 + 1]};
+		}
+
+		cudaFree(flow_d);
+		cudaFree(depth_d);
+		return flow;
 	}
 
 	/**
