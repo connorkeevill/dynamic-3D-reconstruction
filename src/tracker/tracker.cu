@@ -1027,10 +1027,14 @@ namespace refusion {
 		// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
 		for (int i = 0; i < opticalFlow.rows; i++) {
 			for (int j = 0; j < opticalFlow.cols; j++) {
-				// Optical flow has a lot of areas where there is no motion observed (e.g. in the middle of an object).
-				// We exclude these areas from the difference, to avoid introducing fake flow.
-				if (length(opticalFlow.at<cv::Point2f>(i, j)) < 2 || length(estimatedFlow.at<cv::Point2f>(i, j)) < 1) {
+				// If the sensor didn't detect a depth value for a pixel, then we have no flow estimate. We pass this noise
+				// on to the difference flow.
+				if(length(estimatedFlow.at<cv::Point2f>(i, j)) < 1) {
 					differenceFlow.at<cv::Point2f>(i, j) = cv::Point2f(0, 0);
+				}
+				// If the optical flow is small, then motion is already below a threshold
+				else if (length(opticalFlow.at<cv::Point2f>(i, j)) < 3) {
+					differenceFlow.at<cv::Point2f>(i, j) = opticalFlow.at<cv::Point2f>(i, j);
 				}
 				else {
 					differenceFlow.at<cv::Point2f>(i, j) = opticalFlow.at<cv::Point2f>(i, j) - estimatedFlow.at<cv::Point2f>(i, j);
@@ -1140,6 +1144,15 @@ namespace refusion {
 
 			cv::Mat differenceFlow = DifferenceFlowFrames(farnbackFlowField, poseFlowB);
 			LogFlowField(differenceFlow, "difference-flow");
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (length(differenceFlow.at<cv::Point2f>(i, j)) > 3) {
+						mask[i * image.sensor_.cols + j] = true;
+					}
+				}
+			}
+
 		} else {
 			first_scan_ = false;
 		}
