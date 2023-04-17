@@ -991,6 +991,56 @@ namespace refusion {
 		return flow;
 	}
 
+	//TODO: Implement on GPU
+//	__global__ void DifferenceFlowFramesKernel(float *opticalFlow, float *estimatedFlow, float *difference)
+//	{
+//		int index = blockIdx.x * blockDim.x + threadIdx.x;
+//		int stride = blockDim.x * gridDim.x;
+//		int size = opticalFlow.rows * opticalFlow.cols;
+//		for (int idx = index; idx < size; idx += stride) {
+//			if(opticalFlow[idx * 2] == 0 && opticalFlow[idx * 2 + 1] == 0) { continue; }
+//			if(estimatedFlow[idx * 2] == 0 && estimatedFlow[idx * 2 + 1] == 0) { continue; }
+//
+//			difference[idx * 2] = opticalFlow[idx * 2] - estimatedFlow[idx * 2];
+//			difference[idx * 2 + 1] = opticalFlow[idx * 2 + 1] - estimatedFlow[idx * 2 + 1];
+//		}
+//	}
+
+	cv::Mat DifferenceFlowFrames(cv::Mat opticalFlow, cv::Mat estimatedFlow)
+	{
+		// TODO: Implement on GPU
+//
+//		cv::cuda::GpuMat opticalFlowGpu{opticalFlow};
+//		cv::cuda::GpuMat estimatedFlowGpu{estimatedFlow};
+//		cv::cuda::GpuMat differenceFlowGpu{differenceFlow};
+//
+//		int threads_per_block = THREADS_PER_BLOCK3;
+//		int thread_blocks = (opticalFlow.rows * opticalFlow.cols + threads_per_block - 1) / threads_per_block;
+//		DifferenceFlowFramesKernel<<<thread_blocks, threads_per_block>>>(opticalFlowGpu, estimatedFlowGpu, differenceFlowGpu);
+//		cudaDeviceSynchronize();
+//
+//		differenceFlowGpu.download(differenceFlow);
+//		return differenceFlow;
+
+		cv::Mat differenceFlow{opticalFlow.size(), opticalFlow.type()};
+
+		// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
+		for (int i = 0; i < opticalFlow.rows; i++) {
+			for (int j = 0; j < opticalFlow.cols; j++) {
+				// Optical flow has a lot of areas where there is no motion observed (e.g. in the middle of an object).
+				// We exclude these areas from the difference, to avoid introducing fake flow.
+				if (length(opticalFlow.at<cv::Point2f>(i, j)) < 2 || length(estimatedFlow.at<cv::Point2f>(i, j)) < 1) {
+					differenceFlow.at<cv::Point2f>(i, j) = cv::Point2f(0, 0);
+				}
+				else {
+					differenceFlow.at<cv::Point2f>(i, j) = opticalFlow.at<cv::Point2f>(i, j) - estimatedFlow.at<cv::Point2f>(i, j);
+				}
+			}
+		}
+
+		return differenceFlow;
+	}
+
 	/**
 	 * @brief Tracks the camera using optical flow.
 	 *
@@ -1088,23 +1138,8 @@ namespace refusion {
 			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
 			LogFlowField(poseFlowB, "pose-flow");
 
-			cv::Mat poseFlowMask(farnbackFlowField.size(), CV_32FC2);
-
-			// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
-			for (int i = 0; i < farnbackFlowField.rows; i++) {
-				for (int j = 0; j < farnbackFlowField.cols; j++) {
-					// Optical flow has a lot of areas where there is no motion observed (e.g. in the middle of an object).
-					// We exclude these areas from the difference, to avoid introducing fake flow.
-					if (length(farnbackFlowField.at<cv::Point2f>(i, j)) < 2 || length(poseFlowB.at<cv::Point2f>(i, j)) < 1) {
-						poseFlowMask.at<cv::Point2f>(i, j) = cv::Point2f(0, 0);
-					}
-					else {
-						poseFlowMask.at<cv::Point2f>(i, j) = farnbackFlowField.at<cv::Point2f>(i, j) - poseFlowB.at<cv::Point2f>(i, j);
-					}
-				}
-			}
-
-			LogFlowField(poseFlowMask, "difference-flow");
+			cv::Mat differenceFlow = DifferenceFlowFrames(farnbackFlowField, poseFlowB);
+			LogFlowField(differenceFlow, "difference-flow");
 		} else {
 			first_scan_ = false;
 		}
