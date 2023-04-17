@@ -884,7 +884,10 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 			transformedPoint = transformedPoint / transformedPoint(3);
 			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
 
-			flow[idx * 2] = x - transformedPoint2D.x();
+			float X = x - transformedPoint2D.x();
+			float Y = y - transformedPoint2D.y();
+
+			flow[idx * 2] = X;
         	flow[idx * 2 + 1] = y - transformedPoint2D.y();
 		}
 	}
@@ -930,14 +933,15 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 	{
 		// Allocate memory on the device. We multiply by 2 because we need to store the x and y components of the flow.
 		float *flow_d;
-		cudaMallocManaged(&flow_d, sizeof(float) * prev_depth_frame.rows * prev_depth_frame.cols * 2);
+		cudaMallocManaged(&flow_d, sizeof(float) * sensor.rows * sensor.cols * 2);
+		for(int point = 0; point < sensor.rows * sensor.cols; point++)
+		{
+			flow_d[point] = 0;
+		}
 
 		// Allocate memory on the GPU for the depth array
 		float *depth_d;
 		cudaMallocManaged(&depth_d, sizeof(float) * prev_depth_frame.rows * prev_depth_frame.cols);
-		// We can do this as cv::Mat created by imread (which a depth frame is) is continuous:
-		// https://answers.opencv.org/question/22742/create-a-memory-continuous-cvmat-any-api-could-do-that/
-		depth_d = prev_depth_frame.ptr<float>(0);
 		for(int point = 0; point < sensor.rows * sensor.cols; point++)
 		{
 			depth_d[point] = prev_depth_frame.at<float>(point);
@@ -956,7 +960,6 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 		}
 
 		cudaFree(flow_d);
-		cudaFree(depth_d);
 		return flow;
 	}
 
@@ -1072,9 +1075,6 @@ __global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_dept
 			logger_->addFrameToOutputVideo(poseFlowMaskFrame, "CPE-flow-field-diff.avi");
 
 			// Messiness over
-
-			Eigen::Matrix4d prev_pose = pose_;
-			TrackCamera(image, mask);
 		} else {
 			first_scan_ = false;
 		}
