@@ -1147,12 +1147,11 @@ namespace refusion {
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (length(differenceFlow.at<cv::Point2f>(i, j)) > 3) {
+					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (3 / depth.at<float>(i, j))) {
 						mask[i * image.sensor_.cols + j] = true;
 					}
 				}
 			}
-
 		} else {
 			first_scan_ = false;
 		}
