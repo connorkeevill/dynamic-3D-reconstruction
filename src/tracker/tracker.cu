@@ -1171,6 +1171,9 @@ namespace refusion {
 					mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
 				}
 			}
+
+			pose_ = previousPose;
+			TrackCamera(image, mask);
 		} else {
 			first_scan_ = false;
 		}
