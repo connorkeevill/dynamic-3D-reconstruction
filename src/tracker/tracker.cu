@@ -1147,9 +1147,28 @@ namespace refusion {
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (3 / depth.at<float>(i, j))) {
+					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (2 * depth.at<float>(i, j))) {
 						mask[i * image.sensor_.cols + j] = true;
 					}
+				}
+			}
+
+			// Erode then dilate the mask:
+			cv::Mat cvmask = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					cvmask.at<uchar>(i, j) = mask[i * image.sensor_.cols + j] ? 255 : 0;
+				}
+			}
+
+			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+			cv::erode(cvmask, cvmask, element);
+			cv::dilate(cvmask, cvmask, element);
+
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
 				}
 			}
 		} else {
