@@ -90,6 +90,3 @@ RUN cmake .
 RUN make -j$(nproc)
 
 CMD ["python", "python/run.py"]
-
-WORKDIR /app/data
-CMD ["python", "python/evaluate-all.py"]
