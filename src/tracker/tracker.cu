@@ -11,6 +11,7 @@
 #include "utils/matrix_utils.h"
 #include "utils/utils.h"
 #include "utils/rgbd_image.h"
+#include <stdlib.h>
 
 #define THREADS_PER_BLOCK3 32
 
@@ -1147,7 +1148,7 @@ namespace refusion {
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (2 * depth.at<float>(i, j))) {
+					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (3.5 * depth.at<float>(i, j))) {
 						mask[i * image.sensor_.cols + j] = true;
 					}
 				}
@@ -1162,9 +1163,51 @@ namespace refusion {
 				}
 			}
 
-			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(17, 17));
 			cv::erode(cvmask, cvmask, element);
 			cv::dilate(cvmask, cvmask, element);
+
+			queue<tuple<int, int, int>> q;
+			for (int i = 0; i < image.sensor_.rows; i++) {
+				for (int j = 0; j < image.sensor_.cols; j++) {
+					if (cvmask.at<uchar>(i, j) == 255) {
+						q.push(make_tuple(i, j, 1));
+					}
+				}
+			}
+
+			float depthThreshold = 0.2f;
+			int growthThreshold = 50;
+
+			while(!q.empty()) {
+				tuple<int, int, int> t = q.front();
+				q.pop();
+				int i = get<0>(t);
+				int j = get<1>(t);
+				int growth = get<2>(t);
+
+				if (growth > growthThreshold) continue;
+
+				if (i > 0 && cvmask.at<uchar>(i - 1, j) == 0 && abs(depth.at<float>(i - 1, j) - depth.at<float>(i, j)) < depthThreshold) {
+					cvmask.at<uchar>(i - 1, j) = 255;
+					q.push(make_tuple(i - 1, j, growth + 1));
+				}
+
+				if (i < image.sensor_.rows - 1 && cvmask.at<uchar>(i + 1, j) == 0 && abs(depth.at<float>(i + 1, j) - depth.at<float>(i, j)) < depthThreshold) {
+					cvmask.at<uchar>(i + 1, j) = 255;
+					q.push(make_tuple(i + 1, j, growth + 1));
+				}
+
+				if (j > 0 && cvmask.at<uchar>(i, j - 1) == 0 && abs(depth.at<float>(i, j - 1) - depth.at<float>(i, j)) < depthThreshold) {
+					cvmask.at<uchar>(i, j - 1) = 255;
+					q.push(make_tuple(i, j - 1, growth + 1));
+				}
+
+				if (j < image.sensor_.cols - 1 && cvmask.at<uchar>(i, j + 1) == 0 && abs(depth.at<float>(i, j + 1) - depth.at<float>(i, j)) < depthThreshold) {
+					cvmask.at<uchar>(i, j + 1) = 255;
+					q.push(make_tuple(i, j + 1, growth + 1));
+				}
+			}
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
