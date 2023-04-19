@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 		}
 	}
 	logger->verboseLog("Main loop finished.");
-	timer.addMeasurement("Main loop finished");
+	timer.addMeasurement("Main loop finished", video.getFrameCount());
 
 	if (settings.outputMesh)
 	{

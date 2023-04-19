@@ -16,9 +16,11 @@ public:
 	~Timer() = default;
 
 	void addMeasurement(string label);
+	void addMeasurement(string label, int samples);
 	string getTimingTrace();
 private:
 	std::vector<pair<string, time_point<high_resolution_clock>>> measurements {};
+	std::vector<pair<string, int>> samples {};
 };
 
 
