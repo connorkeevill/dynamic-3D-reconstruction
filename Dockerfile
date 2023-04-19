@@ -89,4 +89,7 @@ ARG CKDOCKER=1
 RUN cmake .
 RUN make -j$(nproc)
 
-CMD ["python", "run.py"]
+CMD ["python", "python/run.py"]
+
+WORKDIR /app/data
+CMD ["python", "python/evaluate-all.py"]
