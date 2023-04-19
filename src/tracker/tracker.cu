@@ -1177,7 +1177,7 @@ namespace refusion {
 			}
 
 			float depthThreshold = 0.2f;
-			int growthThreshold = 50;
+			int growthThreshold = 75;
 
 			while(!q.empty()) {
 				tuple<int, int, int> t = q.front();
