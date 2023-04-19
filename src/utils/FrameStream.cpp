@@ -35,7 +35,7 @@ TUMVideo::TUMVideo(const string& associationDirectory, bool streamVideoFromDisk=
 			frame.depth = cv::imread(associationDirectory + "/" + depthFrame, CV_LOAD_IMAGE_ANYDEPTH);
 			frame.depth.convertTo(frame.depth, CV_32FC1, 1.0 / 5000.0);
 
-			timestamps.push_back(stod(rgbTimestamp));
+			timestamps.push_back(stod(depthTimestamp));
 			frames.push_back(frame);
 		}
 	}
