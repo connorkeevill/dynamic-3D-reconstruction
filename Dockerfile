@@ -89,4 +89,4 @@ ARG CKDOCKER=1
 RUN cmake .
 RUN make -j$(nproc)
 
-CMD ["python", "python/run.py"]
+CMD ["python", "run.py"]
