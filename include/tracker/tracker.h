@@ -202,8 +202,8 @@ namespace refusion {
 		void AddScan(const cv::Mat &rgb, const cv::Mat &depth) override;
 	protected:
 		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
-		cv::Mat prev_rgb_frame;
-		cv::Mat prev_depth_frame;
+		void calculateMask(RgbdImage image, bool *mask);
+		RgbdImage prev_image;
 	};
 
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,

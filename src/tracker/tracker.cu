@@ -7,6 +7,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/cudaoptflow.hpp>
+#include <opencv2/cudaarithm.hpp>
 #include "tracker/eigen_wrapper.h"
 #include "utils/matrix_utils.h"
 #include "utils/utils.h"
@@ -892,11 +893,11 @@ namespace refusion {
 	 * @param C
 	 * @return
 	 */
-	cv::Mat GPUOpticalFlow(cv::Mat P, cv::Mat C)
+	void GPUOpticalFlow(RgbdImage &P, RgbdImage &C, float *flow)
 	{
-		cv::cuda::GpuMat current, previous, flow;
-		cv::cuda::GpuMat d_P(P);
-		cv::cuda::GpuMat d_C(C);
+		cv::cuda::GpuMat current, previous, flowMat;
+		cv::cuda::GpuMat d_P{P.sensor_.rows, P.sensor_.cols, CV_8UC3, P.rgb_};
+		cv::cuda::GpuMat d_C{C.sensor_.rows, C.sensor_.cols, CV_8UC3, C.rgb_};
 
 		cv::cuda::cvtColor(d_C, current, cv::COLOR_BGR2GRAY);
 		cv::cuda::cvtColor(d_P, previous, cv::COLOR_BGR2GRAY);
@@ -909,141 +910,69 @@ namespace refusion {
 		farn->setPolyN(5);
 		farn->setPolySigma(1.2);
 
-		farn->calc(previous, current, flow);
+		farn->calc(previous, current, flowMat);
 
-		cv::Mat result;
-		flow.download(result);
+		// TODO: This feels like a really dumb thing to have to download back to the host before copying back onto device
+		// See if there is a way to improve this.
+		cv::Mat flow_cpu;
+		flowMat.download(flow_cpu);
 
-		return result;
+		for(int flowIndex = 0; flowIndex < P.sensor_.rows * P.sensor_.cols; flowIndex++) {
+			flow[flowIndex * 2] = flow_cpu.at<cv::Point2f>(flowIndex).x;
+			flow[flowIndex * 2 + 1] = flow_cpu.at<cv::Point2f>(flowIndex).y;
+		}
 	}
 
-	/**
-	 * @brief Runs on the GPU to estimate optical flow using estimated camera pose.
-	 *
-	 * @param increment
-	 * @param prev_depth_frame
-	 * @param sensor
-	 * @param flow
-	 */
-	__global__ void estimate_flow_kernel(Eigen::Matrix4d increment, float *prev_depth_frame, RgbdSensor sensor, float *flow)
+	__global__ void SubtractEgomotion(Eigen::Matrix4d increment, RgbdImage prev_image, float *optical_flow, float *difference_flow)
+	{
+		float OPTICAL_FLOW_MOVEMENT_THRESHOLD = 3;
+
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		int stride = blockDim.x * gridDim.x;
+		int size = prev_image.sensor_.rows * prev_image.sensor_.cols;
+
+		for (int idx = index; idx < size; idx += stride) {
+			if(sqrt((optical_flow[idx * 2] * optical_flow[idx * 2]) + (optical_flow[idx * 2 + 1] * optical_flow[idx * 2 + 1])) < OPTICAL_FLOW_MOVEMENT_THRESHOLD) {
+				difference_flow[idx * 2] = optical_flow[idx * 2];
+				difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1];
+				continue;
+			}
+			if (prev_image.depth_[idx] == 0) {
+				difference_flow[idx * 2] = 0;
+				difference_flow[idx * 2 + 1] = 0;
+				continue;
+			}
+
+			int x = idx % prev_image.sensor_.cols;
+			int y = idx / prev_image.sensor_.cols;
+
+			Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_image.depth_[idx], prev_image.sensor_);
+			Eigen::Vector4d transformedPoint = increment * point;
+			transformedPoint = transformedPoint / transformedPoint(3);
+			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, prev_image.sensor_);
+
+			float X = (float)x - transformedPoint2D.x();
+			float Y = (float)y - transformedPoint2D.y();
+
+			difference_flow[idx * 2] = optical_flow[idx * 2] - X;
+			difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1] - Y;
+		}
+	}
+
+	__global__ void ThresholdOpticalFlow(float *difference_flow, bool *mask, RgbdImage image)
 	{
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
-		int size = sensor.rows * sensor.cols;
+		int size = image.sensor_.rows * image.sensor_.cols;
 		for (int idx = index; idx < size; idx += stride) {
-			if (prev_depth_frame[idx] == 0) { continue; }
-
-			int x = idx % sensor.cols;
-			int y = idx / sensor.cols;
-
-			Eigen::Vector4d point = projectIntoWorldSpace(x, y, prev_depth_frame[idx], sensor);
-			Eigen::Vector4d transformedPoint = (increment) * point;
-			transformedPoint = transformedPoint / transformedPoint(3);
-			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
-
-			float X = x - transformedPoint2D.x();
-			float Y = y - transformedPoint2D.y();
-
-			flow[idx * 2] = X;
-        	flow[idx * 2 + 1] = y - transformedPoint2D.y();
-		}
-	}
-
-	/**
-	 * @brief Creates an "optical flow" estimate of the image by applying the transformation (from CPE) to the previous
-	 * image.
-	 *
-	 * @param increment
-	 * @param prev_depth_frame
-	 * @param sensor
-	 * @return
-	 */
-	cv::Mat EstimateFlowWithCPE(Eigen::Matrix4d increment, cv::Mat prev_depth_frame, RgbdSensor sensor)
-	{
-		// Allocate memory on the device. We multiply by 2 because we need to store the x and y components of the flow.
-		float *flow_d;
-		cudaMallocManaged(&flow_d, sizeof(float) * sensor.rows * sensor.cols * 2);
-		for(int point = 0; point < sensor.rows * sensor.cols; point++)
-		{
-			flow_d[point] = 0;
-		}
-
-		// Allocate memory on the GPU for the depth array
-		float *depth_d;
-		cudaMallocManaged(&depth_d, sizeof(float) * prev_depth_frame.rows * prev_depth_frame.cols);
-		for(int point = 0; point < sensor.rows * sensor.cols; point++)
-		{
-			depth_d[point] = prev_depth_frame.at<float>(point);
-		}
-
-		int threads_per_block = THREADS_PER_BLOCK3;
-		int thread_blocks = (sensor.cols * sensor.rows + threads_per_block - 1) / threads_per_block;
-		estimate_flow_kernel<<<thread_blocks, threads_per_block>>>(increment, depth_d, sensor, flow_d);
-		cudaDeviceSynchronize();
-
-		// Copy the data back to the host
-		cv::Mat flow(prev_depth_frame.rows, prev_depth_frame.cols, CV_32FC2, cv::Scalar(0,0));
-		for(int point = 0; point < sensor.rows * sensor.cols; point++)
-		{
-			flow.at<cv::Point2f>(point) = cv::Point2f{flow_d[point * 2], flow_d[point * 2 + 1]};
-		}
-
-		cudaFree(flow_d);
-		return flow;
-	}
-
-	//TODO: Implement on GPU
-//	__global__ void DifferenceFlowFramesKernel(float *opticalFlow, float *estimatedFlow, float *difference)
-//	{
-//		int index = blockIdx.x * blockDim.x + threadIdx.x;
-//		int stride = blockDim.x * gridDim.x;
-//		int size = opticalFlow.rows * opticalFlow.cols;
-//		for (int idx = index; idx < size; idx += stride) {
-//			if(opticalFlow[idx * 2] == 0 && opticalFlow[idx * 2 + 1] == 0) { continue; }
-//			if(estimatedFlow[idx * 2] == 0 && estimatedFlow[idx * 2 + 1] == 0) { continue; }
-//
-//			difference[idx * 2] = opticalFlow[idx * 2] - estimatedFlow[idx * 2];
-//			difference[idx * 2 + 1] = opticalFlow[idx * 2 + 1] - estimatedFlow[idx * 2 + 1];
-//		}
-//	}
-
-	cv::Mat DifferenceFlowFrames(cv::Mat opticalFlow, cv::Mat estimatedFlow)
-	{
-		// TODO: Implement on GPU
-//
-//		cv::cuda::GpuMat opticalFlowGpu{opticalFlow};
-//		cv::cuda::GpuMat estimatedFlowGpu{estimatedFlow};
-//		cv::cuda::GpuMat differenceFlowGpu{differenceFlow};
-//
-//		int threads_per_block = THREADS_PER_BLOCK3;
-//		int thread_blocks = (opticalFlow.rows * opticalFlow.cols + threads_per_block - 1) / threads_per_block;
-//		DifferenceFlowFramesKernel<<<thread_blocks, threads_per_block>>>(opticalFlowGpu, estimatedFlowGpu, differenceFlowGpu);
-//		cudaDeviceSynchronize();
-//
-//		differenceFlowGpu.download(differenceFlow);
-//		return differenceFlow;
-
-		cv::Mat differenceFlow{opticalFlow.size(), opticalFlow.type()};
-
-		// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
-		for (int i = 0; i < opticalFlow.rows; i++) {
-			for (int j = 0; j < opticalFlow.cols; j++) {
-				// If the sensor didn't detect a depth value for a pixel, then we have no flow estimate. We pass this noise
-				// on to the difference flow.
-				if(length(estimatedFlow.at<cv::Point2f>(i, j)) < 1) {
-					differenceFlow.at<cv::Point2f>(i, j) = cv::Point2f(0, 0);
-				}
-				// If the optical flow is small, then motion is already below a threshold
-				else if (length(opticalFlow.at<cv::Point2f>(i, j)) < 3) {
-					differenceFlow.at<cv::Point2f>(i, j) = opticalFlow.at<cv::Point2f>(i, j);
-				}
-				else {
-					differenceFlow.at<cv::Point2f>(i, j) = opticalFlow.at<cv::Point2f>(i, j) - estimatedFlow.at<cv::Point2f>(i, j);
-				}
+			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > 3.5 * image.depth_[idx]) {
+				mask[idx] = true;
+			}
+			else
+			{
+				mask[idx] = false;
 			}
 		}
-
-		return differenceFlow;
 	}
 
 	/**
@@ -1110,56 +1039,48 @@ namespace refusion {
 		prev_increment_ = increment;
 	}
 
-
-	void OpticalFlowTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
+	void OpticalFlowTracker::calculateMask(RgbdImage image, bool *mask)
 	{
-		RgbdImage image;
-		image.Init(sensor_);
+		// Allocate GPU memory
+		float *d_optical_flow;
+		cudaMallocManaged(&d_optical_flow, sizeof(float) * 2 * image.sensor_.rows * image.sensor_.cols);
 
-		// Linear copy for now
-		for (int i = 0; i < image.sensor_.rows; i++) {
-			for (int j = 0; j < image.sensor_.cols; j++) {
-				image.rgb_[i * image.sensor_.cols + j] = make_uchar3(rgb.at<cv::Vec3b>(i, j)(2), rgb.at<cv::Vec3b>(i, j)(1), rgb.at<cv::Vec3b>(i, j)(0));
-				image.depth_[i * image.sensor_.cols + j] = depth.at<float>(i, j);
-			}
-		}
+		float *d_optical_flow_sans_egomotion;
+		cudaMallocManaged(&d_optical_flow_sans_egomotion, sizeof(float) * 2 * image.sensor_.rows * image.sensor_.cols);
 
-		bool *mask;
-		cudaMallocManaged(&mask, sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
-		for (int i = 0; i < image.sensor_.rows * image.sensor_.cols; i++) {
-			mask[i] = false;
-		}
+		// Kernel settings
+		int threads_per_block = THREADS_PER_BLOCK3;
+		int thread_blocks = (image.sensor_.cols * image.sensor_.rows + threads_per_block - 1) / threads_per_block;
 
-		if (!first_scan_) {
-			cv::Mat farnbackFlowField = GPUOpticalFlow(prev_rgb_frame, rgb);
-			LogFlowField(farnbackFlowField, "optical-flow");
+		// Calculate the optical flow
+		GPUOpticalFlow(prev_image, image, d_optical_flow);
+		cudaDeviceSynchronize();
+		// Store the previous pose before we update the pose.
+		Eigen::Matrix4d previousPose = pose_;
 
-			Eigen::Matrix4d previousPose = pose_;
+		for (int iteration = 0; iteration < 1; iteration++) {
+			// Start each iteration by estimating the current pose with the current mask.
+			pose_ = previousPose;
 			TrackCamera(image, mask);
 
-			Eigen::Matrix4d inverse = previousPose.inverse();
-			Eigen::Matrix4d increment = pose_ * inverse;
+			// Subtract the egomotion from the optical flow
+			Eigen::Matrix4d increment = pose_ * previousPose.inverse();
 
-			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
-			LogFlowField(poseFlowB, "pose-flow");
+			SubtractEgomotion<<<thread_blocks, threads_per_block>>>(increment, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
+			cudaDeviceSynchronize();
 
-			cv::Mat differenceFlow = DifferenceFlowFrames(farnbackFlowField, poseFlowB);
-			LogFlowField(differenceFlow, "difference-flow");
+			// Now we can seed the mask by thresholding the output of the subtracted egomotion.
+			ThresholdOpticalFlow<<<thread_blocks, threads_per_block>>>(d_optical_flow_sans_egomotion, mask, image);
+			cudaDeviceSynchronize();
 
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (length(differenceFlow.at<cv::Point2f>(i, j)) > (3.5 * depth.at<float>(i, j))) {
-						mask[i * image.sensor_.cols + j] = true;
-					}
-				}
-			}
-
-			// Erode then dilate the mask:
+			// Perform morphological closing on the mask:
 			cv::Mat cvmask = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+			cv::Mat depth = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_32FC1);
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
 					cvmask.at<uchar>(i, j) = mask[i * image.sensor_.cols + j] ? 255 : 0;
+					depth.at<float>(i, j) = image.depth_[i * image.sensor_.cols + j];
 				}
 			}
 
@@ -1167,6 +1088,7 @@ namespace refusion {
 			cv::erode(cvmask, cvmask, element);
 			cv::dilate(cvmask, cvmask, element);
 
+			// Finally we must perform the flood fill to ensure that the mask is connected.
 			queue<tuple<int, int, int>> q;
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
@@ -1187,6 +1109,8 @@ namespace refusion {
 				int growth = get<2>(t);
 
 				if (growth > growthThreshold) continue;
+
+				int depthIndex = i * image.sensor_.cols + j;
 
 				if (i > 0 && cvmask.at<uchar>(i - 1, j) == 0 && abs(depth.at<float>(i - 1, j) - depth.at<float>(i, j)) < depthThreshold) {
 					cvmask.at<uchar>(i - 1, j) = 255;
@@ -1214,23 +1138,58 @@ namespace refusion {
 					mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
 				}
 			}
+		}
 
-			pose_ = previousPose;
+		// Free the memory allocated on GPU
+		cudaFree(d_optical_flow);
+		cudaFree(d_optical_flow_sans_egomotion);
+	}
+
+	void OpticalFlowTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
+	{
+		RgbdImage image;
+		image.Init(sensor_, true); // Passing the true flag here to perform manual memory management
+
+		cudaMallocManaged(&image.rgb_, sizeof(uchar3) * image.sensor_.rows * image.sensor_.cols);
+		cudaMallocManaged(&image.depth_, sizeof(float) * image.sensor_.rows * image.sensor_.cols);
+
+		// Copy the data from the cv::Mat to the RgbdImage. This allows us to use the same datastructures for the CPU and GPU
+		for(int datum = 0; datum < image.sensor_.rows * image.sensor_.cols; datum++) {
+			image.rgb_[datum] = make_uchar3(rgb.at<cv::Vec3b>(datum)(2), rgb.at<cv::Vec3b>(datum)(1), rgb.at<cv::Vec3b>(datum)(0));
+			image.depth_[datum] = depth.at<float>(datum);
+		}
+
+		// Declare the mask to be used for this scan.
+		bool *mask;
+		cudaMallocManaged(&mask, sizeof(bool) * image.sensor_.rows * image.sensor_.cols);
+		cudaDeviceSynchronize();
+		// If this isn't the first scan, then we can use optical flow to create a mask and track the camera. Otherwise,
+		// we just integrate the scan into the volume and flip the first_scan_ flag.
+		if(!first_scan_) {
+			calculateMask(image, mask);
+
+			// As this isn't the first scan, we have a previous pose to use. We store this before we update the pose.
 			TrackCamera(image, mask);
-		} else {
+
+			// Again, as this isn't the first scan, we have a previous pose (which we are about to overwrite with the
+			// current pose) so we need to free the memory allocated for the previous image.
+			cudaFree(prev_image.rgb_);
+			cudaFree(prev_image.depth_);
+		}
+		else {
 			first_scan_ = false;
 		}
 
-		prev_depth_frame = depth;
-		prev_rgb_frame = rgb;
+		// Store the current as the previous image for the next call of this function.
+		prev_image = image;
 
+		// Integrate the scan into the volume using the calculated pose and mask.
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
-
-		LogMask(mask, image);
-
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
+		// Log and free the mask
+		LogMask(mask, image);
 		cudaFree(mask);
 	}
 }
