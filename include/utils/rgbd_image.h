@@ -26,6 +26,14 @@ namespace refusion {
 		void Init(const RgbdSensor &sensor);
 
 		/**
+		 * @brief      Initializes the class by allocating the necessary memory for
+		 * 				the images. Also allows us to specify that manual memory is wanted.
+		 * @param sensor
+		 * @param manual_memory_management
+		 */
+		void Init(const RgbdSensor &sensor, bool manual_memory_management);
+
+		/**
 		 * @brief      Gets the 3D point corresponding to the given pixel.
 		 *
 		 * @param[in]  u     Horizontal coordinate of the pixel
@@ -57,6 +65,10 @@ namespace refusion {
 
 		/** The intrinsic parameters of the RGB-D sensor */
 		RgbdSensor sensor_;
+
+		/** Whether or not to perform manual memory management (manual here meaning that memory is managed outside of the
+		 * class. Automatic means that the RgbdImage will allocate and free memory itself. */
+		bool manual_memory_management = false;
 	};
 
 }  // namespace refusion
