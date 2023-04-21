@@ -923,6 +923,14 @@ namespace refusion {
 		}
 	}
 
+	/**
+	 * Subtracts the egomotion from the optical flow to get the difference flow and stores this in the difference_flow array.
+	 *
+	 * @param increment
+	 * @param prev_image
+	 * @param optical_flow
+	 * @param difference_flow
+	 */
 	__global__ void SubtractEgomotion(Eigen::Matrix4d increment, RgbdImage prev_image, float *optical_flow, float *difference_flow)
 	{
 		float OPTICAL_FLOW_MOVEMENT_THRESHOLD = 3;
@@ -932,6 +940,9 @@ namespace refusion {
 		int size = prev_image.sensor_.rows * prev_image.sensor_.cols;
 
 		for (int idx = index; idx < size; idx += stride) {
+			difference_flow[idx * 2] = 0;
+			difference_flow[idx * 2 + 1] = 0;
+
 			if(sqrt((optical_flow[idx * 2] * optical_flow[idx * 2]) + (optical_flow[idx * 2 + 1] * optical_flow[idx * 2 + 1])) < OPTICAL_FLOW_MOVEMENT_THRESHOLD) {
 				difference_flow[idx * 2] = optical_flow[idx * 2];
 				difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1];
@@ -959,13 +970,20 @@ namespace refusion {
 		}
 	}
 
+	/**
+	 * Thresholds the given difference flow to determine which pixels are moving.
+	 *
+	 * @param difference_flow
+	 * @param mask
+	 * @param image
+	 */
 	__global__ void ThresholdOpticalFlow(float *difference_flow, bool *mask, RgbdImage image)
 	{
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
 		int size = image.sensor_.rows * image.sensor_.cols;
 		for (int idx = index; idx < size; idx += stride) {
-			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > 3.5 * image.depth_[idx]) {
+			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > 4 * image.depth_[idx]) {
 				mask[idx] = true;
 			}
 			else
@@ -1039,6 +1057,12 @@ namespace refusion {
 		prev_increment_ = increment;
 	}
 
+	/**
+	 * @brief Calculates the mask using optical flow.
+	 *
+	 * @param image
+	 * @param mask
+	 */
 	void OpticalFlowTracker::calculateMask(RgbdImage image, bool *mask)
 	{
 		// Allocate GPU memory
@@ -1057,86 +1081,84 @@ namespace refusion {
 		cudaDeviceSynchronize();
 		// Store the previous pose before we update the pose.
 		Eigen::Matrix4d previousPose = pose_;
+		Eigen::Matrix4d previousPoseInverse = previousPose.inverse();
 
-		for (int iteration = 0; iteration < 1; iteration++) {
-			// Start each iteration by estimating the current pose with the current mask.
-			pose_ = previousPose;
-			TrackCamera(image, mask);
+		pose_ = previousPose;
+		TrackCamera(image, mask);
 
-			// Subtract the egomotion from the optical flow
-			Eigen::Matrix4d increment = pose_ * previousPose.inverse();
+		// Subtract the egomotion from the optical flow
+		Eigen::Matrix4d increment = pose_ * previousPoseInverse;
 
-			SubtractEgomotion<<<thread_blocks, threads_per_block>>>(increment, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
-			cudaDeviceSynchronize();
+		SubtractEgomotion<<<thread_blocks, threads_per_block>>>(increment, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
+		cudaDeviceSynchronize();
 
-			// Now we can seed the mask by thresholding the output of the subtracted egomotion.
-			ThresholdOpticalFlow<<<thread_blocks, threads_per_block>>>(d_optical_flow_sans_egomotion, mask, image);
-			cudaDeviceSynchronize();
+		// Now we can seed the mask by thresholding the output of the subtracted egomotion.
+		ThresholdOpticalFlow<<<thread_blocks, threads_per_block>>>(d_optical_flow_sans_egomotion, mask, image);
+		cudaDeviceSynchronize();
 
-			// Perform morphological closing on the mask:
-			cv::Mat cvmask = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
-			cv::Mat depth = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_32FC1);
+		// Perform morphological closing on the mask:
+		cv::Mat cvmask = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
+		cv::Mat depth = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_32FC1);
 
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					cvmask.at<uchar>(i, j) = mask[i * image.sensor_.cols + j] ? 255 : 0;
-					depth.at<float>(i, j) = image.depth_[i * image.sensor_.cols + j];
+		for (int i = 0; i < image.sensor_.rows; i++) {
+			for (int j = 0; j < image.sensor_.cols; j++) {
+				cvmask.at<uchar>(i, j) = mask[i * image.sensor_.cols + j] ? 255 : 0;
+				depth.at<float>(i, j) = image.depth_[i * image.sensor_.cols + j];
+			}
+		}
+
+		cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(17, 17));
+		cv::erode(cvmask, cvmask, element);
+		cv::dilate(cvmask, cvmask, element);
+
+		// Finally we must perform the flood fill to ensure that the mask is connected.
+		queue<tuple<int, int, int>> q;
+		for (int i = 0; i < image.sensor_.rows; i++) {
+			for (int j = 0; j < image.sensor_.cols; j++) {
+				if (cvmask.at<uchar>(i, j) == 255) {
+					q.push(make_tuple(i, j, 1));
 				}
 			}
+		}
 
-			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(17, 17));
-			cv::erode(cvmask, cvmask, element);
-			cv::dilate(cvmask, cvmask, element);
+		float depthThreshold = 0.2f;
+		int growthThreshold = 75;
 
-			// Finally we must perform the flood fill to ensure that the mask is connected.
-			queue<tuple<int, int, int>> q;
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					if (cvmask.at<uchar>(i, j) == 255) {
-						q.push(make_tuple(i, j, 1));
-					}
-				}
+		while(!q.empty()) {
+			tuple<int, int, int> t = q.front();
+			q.pop();
+			int i = get<0>(t);
+			int j = get<1>(t);
+			int growth = get<2>(t);
+
+			if (growth > growthThreshold) continue;
+
+			int depthIndex = i * image.sensor_.cols + j;
+
+			if (i > 0 && cvmask.at<uchar>(i - 1, j) == 0 && abs(depth.at<float>(i - 1, j) - depth.at<float>(i, j)) < depthThreshold) {
+				cvmask.at<uchar>(i - 1, j) = 255;
+				q.push(make_tuple(i - 1, j, growth + 1));
 			}
 
-			float depthThreshold = 0.2f;
-			int growthThreshold = 75;
-
-			while(!q.empty()) {
-				tuple<int, int, int> t = q.front();
-				q.pop();
-				int i = get<0>(t);
-				int j = get<1>(t);
-				int growth = get<2>(t);
-
-				if (growth > growthThreshold) continue;
-
-				int depthIndex = i * image.sensor_.cols + j;
-
-				if (i > 0 && cvmask.at<uchar>(i - 1, j) == 0 && abs(depth.at<float>(i - 1, j) - depth.at<float>(i, j)) < depthThreshold) {
-					cvmask.at<uchar>(i - 1, j) = 255;
-					q.push(make_tuple(i - 1, j, growth + 1));
-				}
-
-				if (i < image.sensor_.rows - 1 && cvmask.at<uchar>(i + 1, j) == 0 && abs(depth.at<float>(i + 1, j) - depth.at<float>(i, j)) < depthThreshold) {
-					cvmask.at<uchar>(i + 1, j) = 255;
-					q.push(make_tuple(i + 1, j, growth + 1));
-				}
-
-				if (j > 0 && cvmask.at<uchar>(i, j - 1) == 0 && abs(depth.at<float>(i, j - 1) - depth.at<float>(i, j)) < depthThreshold) {
-					cvmask.at<uchar>(i, j - 1) = 255;
-					q.push(make_tuple(i, j - 1, growth + 1));
-				}
-
-				if (j < image.sensor_.cols - 1 && cvmask.at<uchar>(i, j + 1) == 0 && abs(depth.at<float>(i, j + 1) - depth.at<float>(i, j)) < depthThreshold) {
-					cvmask.at<uchar>(i, j + 1) = 255;
-					q.push(make_tuple(i, j + 1, growth + 1));
-				}
+			if (i < image.sensor_.rows - 1 && cvmask.at<uchar>(i + 1, j) == 0 && abs(depth.at<float>(i + 1, j) - depth.at<float>(i, j)) < depthThreshold) {
+				cvmask.at<uchar>(i + 1, j) = 255;
+				q.push(make_tuple(i + 1, j, growth + 1));
 			}
 
-			for (int i = 0; i < image.sensor_.rows; i++) {
-				for (int j = 0; j < image.sensor_.cols; j++) {
-					mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
-				}
+			if (j > 0 && cvmask.at<uchar>(i, j - 1) == 0 && abs(depth.at<float>(i, j - 1) - depth.at<float>(i, j)) < depthThreshold) {
+				cvmask.at<uchar>(i, j - 1) = 255;
+				q.push(make_tuple(i, j - 1, growth + 1));
+			}
+
+			if (j < image.sensor_.cols - 1 && cvmask.at<uchar>(i, j + 1) == 0 && abs(depth.at<float>(i, j + 1) - depth.at<float>(i, j)) < depthThreshold) {
+				cvmask.at<uchar>(i, j + 1) = 255;
+				q.push(make_tuple(i, j + 1, growth + 1));
+			}
+		}
+
+		for (int i = 0; i < image.sensor_.rows; i++) {
+			for (int j = 0; j < image.sensor_.cols; j++) {
+				mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
 			}
 		}
 
@@ -1145,6 +1167,12 @@ namespace refusion {
 		cudaFree(d_optical_flow_sans_egomotion);
 	}
 
+	/**
+	 * @brief Add a new scan to the tracker. This will perform the optical flow tracking and update the pose.
+	 *
+	 * @param rgb
+	 * @param depth
+	 */
 	void OpticalFlowTracker::AddScan(const cv::Mat &rgb, const cv::Mat &depth)
 	{
 		RgbdImage image;
@@ -1168,7 +1196,6 @@ namespace refusion {
 		if(!first_scan_) {
 			// First we calculate the mask.
 			calculateMask(image, mask);
-
 			// Now we use the mask to track the camera
 			TrackCamera(image, mask);
 
