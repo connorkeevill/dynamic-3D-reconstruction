@@ -1166,13 +1166,15 @@ namespace refusion {
 		// If this isn't the first scan, then we can use optical flow to create a mask and track the camera. Otherwise,
 		// we just integrate the scan into the volume and flip the first_scan_ flag.
 		if(!first_scan_) {
+			// First we calculate the mask.
 			calculateMask(image, mask);
 
-			// As this isn't the first scan, we have a previous pose to use. We store this before we update the pose.
+			// Now we use the mask to track the camera
 			TrackCamera(image, mask);
 
-			// Again, as this isn't the first scan, we have a previous pose (which we are about to overwrite with the
-			// current pose) so we need to free the memory allocated for the previous image.
+			// As this isn't the first scan, we have a previous image (which we are about to overwrite with the
+			// current image) so we need to free the memory allocated for the previous image.
+			// These lines are needed as we created the memory for the previous image in manual mode.
 			cudaFree(prev_image.rgb_);
 			cudaFree(prev_image.depth_);
 		}
