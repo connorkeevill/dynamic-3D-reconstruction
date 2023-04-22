@@ -16,6 +16,8 @@
 
 #define THREADS_PER_BLOCK3 32
 
+const float OPTICAL_FLOW_MOVEMENT_THRESHOLD = 3.5;
+
 namespace refusion {
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,
 					 const TrackerOptions &tracker_options,
@@ -933,8 +935,6 @@ namespace refusion {
 	 */
 	__global__ void SubtractEgomotion(Eigen::Matrix4d increment, RgbdImage prev_image, float *optical_flow, float *difference_flow)
 	{
-		float OPTICAL_FLOW_MOVEMENT_THRESHOLD = 3;
-
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
 		int size = prev_image.sensor_.rows * prev_image.sensor_.cols;
@@ -962,8 +962,11 @@ namespace refusion {
 			transformedPoint = transformedPoint / transformedPoint(3);
 			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, prev_image.sensor_);
 
-			float X = (float)x - transformedPoint2D.x();
-			float Y = (float)y - transformedPoint2D.y();
+//			float X = (float)x - transformedPoint2D.x();
+//			float Y = (float)y - transformedPoint2D.y();
+
+			float X = transformedPoint2D.x() - (float)x;
+			float Y = transformedPoint2D.y() - (float)y;
 
 			difference_flow[idx * 2] = optical_flow[idx * 2] - X;
 			difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1] - Y;
@@ -983,7 +986,7 @@ namespace refusion {
 		int stride = blockDim.x * gridDim.x;
 		int size = image.sensor_.rows * image.sensor_.cols;
 		for (int idx = index; idx < size; idx += stride) {
-			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > 4 * image.depth_[idx]) {
+			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > OPTICAL_FLOW_MOVEMENT_THRESHOLD * image.depth_[idx]) {
 				mask[idx] = true;
 			}
 			else
