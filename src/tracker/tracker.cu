@@ -962,9 +962,6 @@ namespace refusion {
 			transformedPoint = transformedPoint / transformedPoint(3);
 			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, prev_image.sensor_);
 
-//			float X = (float)x - transformedPoint2D.x();
-//			float Y = (float)y - transformedPoint2D.y();
-
 			float X = transformedPoint2D.x() - (float)x;
 			float Y = transformedPoint2D.y() - (float)y;
 
@@ -1086,13 +1083,12 @@ namespace refusion {
 		Eigen::Matrix4d previousPose = pose_;
 		Eigen::Matrix4d previousPoseInverse = previousPose.inverse();
 
-		pose_ = previousPose;
 		TrackCamera(image, mask);
 
 		// Subtract the egomotion from the optical flow
-		Eigen::Matrix4d increment = pose_ * previousPoseInverse;
-
-		SubtractEgomotion<<<thread_blocks, threads_per_block>>>(increment, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
+		Eigen::Matrix4d cameraIncrement = previousPoseInverse * pose_;
+		Eigen::Matrix4d pointCloudIncrement = cameraIncrement.inverse();
+		SubtractEgomotion<<<thread_blocks, threads_per_block>>>(pointCloudIncrement, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
 		cudaDeviceSynchronize();
 
 		// Now we can seed the mask by thresholding the output of the subtracted egomotion.
