@@ -941,8 +941,8 @@ namespace refusion {
 			transformedPoint = transformedPoint / transformedPoint(3);
 			Eigen::Vector2d transformedPoint2D = projectIntoImageSpace(transformedPoint, sensor);
 
-			float X = x - transformedPoint2D.x();
-			float Y = y - transformedPoint2D.y();
+			float X = transformedPoint2D.x() - x;
+			float Y = transformedPoint2D.y() - y;
 
 			flow[idx * 2] = X;
         	flow[idx * 2 + 1] = y - transformedPoint2D.y();
@@ -992,37 +992,8 @@ namespace refusion {
 		return flow;
 	}
 
-	//TODO: Implement on GPU
-//	__global__ void DifferenceFlowFramesKernel(float *opticalFlow, float *estimatedFlow, float *difference)
-//	{
-//		int index = blockIdx.x * blockDim.x + threadIdx.x;
-//		int stride = blockDim.x * gridDim.x;
-//		int size = opticalFlow.rows * opticalFlow.cols;
-//		for (int idx = index; idx < size; idx += stride) {
-//			if(opticalFlow[idx * 2] == 0 && opticalFlow[idx * 2 + 1] == 0) { continue; }
-//			if(estimatedFlow[idx * 2] == 0 && estimatedFlow[idx * 2 + 1] == 0) { continue; }
-//
-//			difference[idx * 2] = opticalFlow[idx * 2] - estimatedFlow[idx * 2];
-//			difference[idx * 2 + 1] = opticalFlow[idx * 2 + 1] - estimatedFlow[idx * 2 + 1];
-//		}
-//	}
-
 	cv::Mat DifferenceFlowFrames(cv::Mat opticalFlow, cv::Mat estimatedFlow)
 	{
-		// TODO: Implement on GPU
-//
-//		cv::cuda::GpuMat opticalFlowGpu{opticalFlow};
-//		cv::cuda::GpuMat estimatedFlowGpu{estimatedFlow};
-//		cv::cuda::GpuMat differenceFlowGpu{differenceFlow};
-//
-//		int threads_per_block = THREADS_PER_BLOCK3;
-//		int thread_blocks = (opticalFlow.rows * opticalFlow.cols + threads_per_block - 1) / threads_per_block;
-//		DifferenceFlowFramesKernel<<<thread_blocks, threads_per_block>>>(opticalFlowGpu, estimatedFlowGpu, differenceFlowGpu);
-//		cudaDeviceSynchronize();
-//
-//		differenceFlowGpu.download(differenceFlow);
-//		return differenceFlow;
-
 		cv::Mat differenceFlow{opticalFlow.size(), opticalFlow.type()};
 
 		// Now subtract the pose flow from the optical flow, only if the optical flow is larger than a threshold:
@@ -1137,10 +1108,11 @@ namespace refusion {
 			Eigen::Matrix4d previousPose = pose_;
 			TrackCamera(image, mask);
 
-			Eigen::Matrix4d inverse = previousPose.inverse();
-			Eigen::Matrix4d increment = pose_ * inverse;
+			Eigen::Matrix4d previousPoseInverse = previousPose.inverse();
+			Eigen::Matrix4d cameraIncrement = previousPoseInverse * pose_;
+			Eigen::Matrix4d pointCloudIncrement = cameraIncrement.inverse();
 
-			cv::Mat poseFlowB = EstimateFlowWithCPE(increment, prev_depth_frame, sensor_);
+			cv::Mat poseFlowB = EstimateFlowWithCPE(pointCloudIncrement, prev_depth_frame, sensor_);
 			LogFlowField(poseFlowB, "pose-flow");
 
 			cv::Mat differenceFlow = DifferenceFlowFrames(farnbackFlowField, poseFlowB);
