@@ -945,7 +945,7 @@ namespace refusion {
 			float Y = transformedPoint2D.y() - y;
 
 			flow[idx * 2] = X;
-        	flow[idx * 2 + 1] = y - transformedPoint2D.y();
+        	flow[idx * 2 + 1] = Y;
 		}
 	}
 
