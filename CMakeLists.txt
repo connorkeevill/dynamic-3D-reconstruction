@@ -40,7 +40,6 @@ set(CMAKE_CXX_FLAGS "-g")
 
 file(GLOB src_files *.cpp */*.cpp)
 add_executable(main ${src_files} src/utils/FrameStream.cpp)
-#add_executable(main src/example/example.cpp src/example/fr_parser.cpp)
 
 if(DEFINED ENV{CKDOCKER})
     target_link_libraries(main refusion eigen_wrapper ${OpenCV_LIBS} ${CUDA_LIBRARIES})
