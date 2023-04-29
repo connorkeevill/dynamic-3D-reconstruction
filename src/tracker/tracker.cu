@@ -1095,7 +1095,7 @@ namespace refusion {
 		ThresholdOpticalFlow<<<thread_blocks, threads_per_block>>>(d_optical_flow_sans_egomotion, mask, image);
 		cudaDeviceSynchronize();
 
-		// Perform morphological closing on the mask:
+		// Perform morphological opening on the mask:
 		cv::Mat cvmask = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
 		cv::Mat depth = cv::Mat(image.sensor_.rows, image.sensor_.cols, CV_32FC1);
 
