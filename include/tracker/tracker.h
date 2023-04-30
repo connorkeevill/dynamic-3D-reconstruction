@@ -203,7 +203,10 @@ namespace refusion {
 	protected:
 		void TrackCamera(const refusion::RgbdImage &image, bool *mask);
 		void calculateMask(RgbdImage image, bool *mask);
+		void GPUOpticalFlow(RgbdImage &P, RgbdImage &C, float *flow);
 		RgbdImage prev_image;
+
+		cv::Ptr<cv::cuda::FarnebackOpticalFlow> farn;
 	};
 
 	refusion::Tracker *CreateTracker(const tsdfvh::TsdfVolumeOptions &tsdf_options,

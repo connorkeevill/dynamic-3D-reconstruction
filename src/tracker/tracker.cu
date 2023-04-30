@@ -887,7 +887,15 @@ namespace refusion {
 					 const TrackerOptions &tracker_options,
 					 const RgbdSensor &sensor,
 					 Logger *logger) : Tracker(tsdf_options, tracker_options, sensor, logger)
-	{}
+	{
+		farn = cv::cuda::FarnebackOpticalFlow::create();
+		farn->setPyrScale(0.5);
+		farn->setNumLevels(3);
+		farn->setWinSize(15);
+		farn->setNumIters(3);
+		farn->setPolyN(5);
+		farn->setPolySigma(1.2);
+	}
 
 	/**
 	 * @brief Runs on the GPU to calculate optical flow between the previous (P) and current (C) images.
@@ -895,22 +903,14 @@ namespace refusion {
 	 * @param C
 	 * @return
 	 */
-	void GPUOpticalFlow(RgbdImage &P, RgbdImage &C, float *flow)
+	void OpticalFlowTracker::GPUOpticalFlow(RgbdImage &P, RgbdImage &C, float *flow)
 	{
 		cv::cuda::GpuMat current, previous, flowMat;
-		cv::cuda::GpuMat d_P{P.sensor_.rows, P.sensor_.cols, CV_8UC3, P.rgb_};
-		cv::cuda::GpuMat d_C{C.sensor_.rows, C.sensor_.cols, CV_8UC3, C.rgb_};
+		cv::cuda::GpuMat d_P{(int)P.sensor_.rows, (int)P.sensor_.cols, CV_8UC3, P.rgb_};
+		cv::cuda::GpuMat d_C{(int)C.sensor_.rows, (int)C.sensor_.cols, CV_8UC3, C.rgb_};
 
 		cv::cuda::cvtColor(d_C, current, cv::COLOR_BGR2GRAY);
 		cv::cuda::cvtColor(d_P, previous, cv::COLOR_BGR2GRAY);
-
-		cv::Ptr<cv::cuda::FarnebackOpticalFlow> farn = cv::cuda::FarnebackOpticalFlow::create();
-		farn->setPyrScale(0.5);
-		farn->setNumLevels(3);
-		farn->setWinSize(15);
-		farn->setNumIters(3);
-		farn->setPolyN(5);
-		farn->setPolySigma(1.2);
 
 		farn->calc(previous, current, flowMat);
 
@@ -931,26 +931,19 @@ namespace refusion {
 	 * @param increment
 	 * @param prev_image
 	 * @param optical_flow
-	 * @param difference_flow
 	 */
-	__global__ void SubtractEgomotion(Eigen::Matrix4d increment, RgbdImage prev_image, float *optical_flow, float *difference_flow)
+	__global__ void SubtractEgomotion(Eigen::Matrix4d increment, RgbdImage prev_image, float *optical_flow)
 	{
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
 		int size = prev_image.sensor_.rows * prev_image.sensor_.cols;
 
 		for (int idx = index; idx < size; idx += stride) {
-			difference_flow[idx * 2] = 0;
-			difference_flow[idx * 2 + 1] = 0;
+			if(sqrt((optical_flow[idx * 2] * optical_flow[idx * 2]) + (optical_flow[idx * 2 + 1] * optical_flow[idx * 2 + 1])) < OPTICAL_FLOW_MOVEMENT_THRESHOLD) {	continue; }
 
-			if(sqrt((optical_flow[idx * 2] * optical_flow[idx * 2]) + (optical_flow[idx * 2 + 1] * optical_flow[idx * 2 + 1])) < OPTICAL_FLOW_MOVEMENT_THRESHOLD) {
-				difference_flow[idx * 2] = optical_flow[idx * 2];
-				difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1];
-				continue;
-			}
 			if (prev_image.depth_[idx] == 0) {
-				difference_flow[idx * 2] = 0;
-				difference_flow[idx * 2 + 1] = 0;
+				optical_flow[idx * 2] = 0;
+				optical_flow[idx * 2 + 1] = 0;
 				continue;
 			}
 
@@ -965,8 +958,8 @@ namespace refusion {
 			float X = transformedPoint2D.x() - (float)x;
 			float Y = transformedPoint2D.y() - (float)y;
 
-			difference_flow[idx * 2] = optical_flow[idx * 2] - X;
-			difference_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1] - Y;
+			optical_flow[idx * 2] = optical_flow[idx * 2] - X;
+			optical_flow[idx * 2 + 1] = optical_flow[idx * 2 + 1] - Y;
 		}
 	}
 
@@ -977,13 +970,13 @@ namespace refusion {
 	 * @param mask
 	 * @param image
 	 */
-	__global__ void ThresholdOpticalFlow(float *difference_flow, bool *mask, RgbdImage image)
+	__global__ void ThresholdFlow(float *flow, bool *mask, RgbdImage image)
 	{
 		int index = blockIdx.x * blockDim.x + threadIdx.x;
 		int stride = blockDim.x * gridDim.x;
 		int size = image.sensor_.rows * image.sensor_.cols;
 		for (int idx = index; idx < size; idx += stride) {
-			if(sqrt((difference_flow[idx * 2] * difference_flow[idx * 2]) + (difference_flow[idx * 2 + 1] * difference_flow[idx * 2 + 1])) > OPTICAL_FLOW_MOVEMENT_THRESHOLD * image.depth_[idx]) {
+			if(sqrt((flow[idx * 2] * flow[idx * 2]) + (flow[idx * 2 + 1] * flow[idx * 2 + 1])) > OPTICAL_FLOW_MOVEMENT_THRESHOLD * image.depth_[idx]) {
 				mask[idx] = true;
 			}
 			else
@@ -1066,18 +1059,15 @@ namespace refusion {
 	void OpticalFlowTracker::calculateMask(RgbdImage image, bool *mask)
 	{
 		// Allocate GPU memory
-		float *d_optical_flow;
-		cudaMallocManaged(&d_optical_flow, sizeof(float) * 2 * image.sensor_.rows * image.sensor_.cols);
-
-		float *d_optical_flow_sans_egomotion;
-		cudaMallocManaged(&d_optical_flow_sans_egomotion, sizeof(float) * 2 * image.sensor_.rows * image.sensor_.cols);
+		float *d_flow;
+		cudaMallocManaged(&d_flow, sizeof(float) * 2 * image.sensor_.rows * image.sensor_.cols);
 
 		// Kernel settings
 		int threads_per_block = THREADS_PER_BLOCK3;
 		int thread_blocks = (image.sensor_.cols * image.sensor_.rows + threads_per_block - 1) / threads_per_block;
 
 		// Calculate the optical flow
-		GPUOpticalFlow(prev_image, image, d_optical_flow);
+		GPUOpticalFlow(prev_image, image, d_flow);
 		cudaDeviceSynchronize();
 		// Store the previous pose before we update the pose.
 		Eigen::Matrix4d previousPose = pose_;
@@ -1085,14 +1075,14 @@ namespace refusion {
 
 		TrackCamera(image, mask);
 
-		// Subtract the egomotion from the optical flow
+		// Subtract the egomotion flow from the optical flow
 		Eigen::Matrix4d cameraIncrement = previousPoseInverse * pose_;
 		Eigen::Matrix4d pointCloudIncrement = cameraIncrement.inverse();
-		SubtractEgomotion<<<thread_blocks, threads_per_block>>>(pointCloudIncrement, prev_image, d_optical_flow, d_optical_flow_sans_egomotion);
+		SubtractEgomotion<<<thread_blocks, threads_per_block>>>(pointCloudIncrement, prev_image, d_flow);
 		cudaDeviceSynchronize();
 
 		// Now we can seed the mask by thresholding the output of the subtracted egomotion.
-		ThresholdOpticalFlow<<<thread_blocks, threads_per_block>>>(d_optical_flow_sans_egomotion, mask, image);
+		ThresholdFlow<<<thread_blocks, threads_per_block>>>(d_flow, mask, image);
 		cudaDeviceSynchronize();
 
 		// Perform morphological opening on the mask:
@@ -1132,8 +1122,6 @@ namespace refusion {
 
 			if (growth > growthThreshold) continue;
 
-			int depthIndex = i * image.sensor_.cols + j;
-
 			if (i > 0 && cvmask.at<uchar>(i - 1, j) == 0 && abs(depth.at<float>(i - 1, j) - depth.at<float>(i, j)) < depthThreshold) {
 				cvmask.at<uchar>(i - 1, j) = 255;
 				q.push(make_tuple(i - 1, j, growth + 1));
@@ -1162,8 +1150,7 @@ namespace refusion {
 		}
 
 		// Free the memory allocated on GPU
-		cudaFree(d_optical_flow);
-		cudaFree(d_optical_flow_sans_egomotion);
+		cudaFree(d_flow);
 	}
 
 	/**
