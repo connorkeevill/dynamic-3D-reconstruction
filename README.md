@@ -39,7 +39,7 @@ This repository contains an example config file, which you can use as a template
 The key parameters here are reconstruction_strategy, the [logging] section, and the [output] section.
 
 ## Building
-The simplest this project is with Docker. I would strongly advise against building this project without Docker, as it has a lot of dependencies.
+As above, I strongly advise the use of Docker to build this project.
 
 Building the project with Docker is simple.
 First, clone the repository (if you don't already have a local copy of the code):
