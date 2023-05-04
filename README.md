@@ -44,7 +44,7 @@ The simplest this project is with Docker. I would strongly advise against buildi
 Building the project with Docker is simple.
 First, clone the repository (if you don't already have a local copy of the code):
 ```
-git clone git@github.com:connorkeevill/Dynamic_Scene_Reconstruction.git
+git clone git@github.com:connorkeevill/dynamic-3D-reconstruction.git
 git submodule init
 git submodule update
 ```
