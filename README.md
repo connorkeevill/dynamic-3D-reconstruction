@@ -26,7 +26,7 @@ The TUM dataset format (which these datasets both follow) represents the video s
 the RGB frames and one containing the depth frames.
 So, once you've downloaded the sequences, you'll also need to associate the depth and rgb frames with each other.
 Fortunately, the TUM dataset provides a tool to do this (associate.py), which is available [here](https://vision.in.tum.de/data/datasets/rgbd-dataset/tools).
-You can also find this file in the /scripts folder of this repository, along with and associate-all.py script which will
+You can also find this file in the /scripts folder of this repository, along with an associate-all.py script which will
 run the associate.py script on all sequences in a folder.
 Usage is as follows:
 ```
