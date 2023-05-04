@@ -1,0 +1,50 @@
+[tsdf_options]
+voxel_size = 0.01
+num_buckets = 50000
+bucket_size = 10
+num_blocks = 500000
+block_size = 8
+max_sdf_weight = 64
+truncation_distance = 0.1
+max_sensor_depth = 5
+min_sensor_depth = 0.1
+
+[tracker_options]
+max_iterations_per_level_0 = 6
+max_iterations_per_level_1 = 3
+max_iterations_per_level_2 = 2
+downsample_0 = 4
+downsample_1 = 2
+downsample_2 = 1
+min_increment = 0.0001
+huber_constant = 0.02
+regularization = 0.002
+reconstruction_strategy = "optical_flow"  # Should be one of "residual", "optical_flow" or "static"
+output_mask_video = true
+output_flow_video = true
+
+[sensor]
+cx = 319.5
+cy = 239.5
+fx = 525.0
+fy = 525.0
+rows = 480
+cols = 640
+depth_factor = 5000
+
+[logging]
+verbose = true
+debug = false
+writeLogsToFile = false
+filepath = ""
+
+[input]
+streamFrames = false
+
+[output]
+outputMesh = true
+outputResults = true
+outputTimings = true
+outputReprojectedVideo = true
+
+
