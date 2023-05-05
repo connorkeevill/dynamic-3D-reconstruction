@@ -401,11 +401,17 @@ if __name__ == '__main__':
         import matplotlib.pyplot as plt
         import matplotlib.pylab as pylab
         fig = plt.figure()
-        ax = fig.add_subplot(111)        
+        ax = fig.add_subplot(111)
+
+        # Set axis limits
+        # ax.set_ylim(0, 1.2)
+
+
+
         ax.plot(stamps - stamps[0],trans_error,'-',color="blue")
         #ax.plot([t for t,e in err_rot],[e for t,e in err_rot],'-',color="red")
         ax.set_xlabel('time [s]')
         ax.set_ylabel('translational error [m]')
-        plt.savefig(args.plot,dpi=1200)
+        plt.savefig(args.plot,dpi=300)
         
 

@@ -200,10 +200,14 @@ if __name__=="__main__":
         for (a,b),(x1,y1,z1),(x2,y2,z2) in zip(matches,first_xyz.transpose().A,second_xyz_aligned.transpose().A):
             ax.plot([x1,x2],[y1,y2],'-',color="red",label=label)
             label=""
-            
+
+        # Set axes scale
+        ax.set_xlim(-0.9, 0.1)
+        ax.set_ylim(-1.7, -1.2)
+
         ax.legend()
             
         ax.set_xlabel('x [m]')
         ax.set_ylabel('y [m]')
-        plt.savefig(args.plot,dpi=1200)
+        plt.savefig(args.plot,dpi=300)
         
