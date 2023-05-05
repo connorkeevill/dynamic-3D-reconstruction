@@ -1135,13 +1135,13 @@ namespace refusion {
 				}
 			}
 
-			LogMask(cvmask, image, "pre-closing-mask");
+			logger_->addFrameToOutputVideo(cvmask, "pre-closing-mask");
 
 			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(17, 17));
 			cv::erode(cvmask, cvmask, element);
 			cv::dilate(cvmask, cvmask, element);
 
-			LogMask(cvmask, image, "post-closing-mask");
+			logger_->addFrameToOutputVideo(cvmask, "post-closing-mask");
 
 			queue<tuple<int, int, int>> q;
 			for (int i = 0; i < image.sensor_.rows; i++) {
@@ -1185,7 +1185,7 @@ namespace refusion {
 				}
 			}
 
-			LogMask(cvmask, image, "post-growth-mask");
+			logger_->addFrameToOutputVideo(cvmask, "post-growth-mask");
 
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
