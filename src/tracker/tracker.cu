@@ -556,7 +556,7 @@ namespace refusion {
 	 * @param mask
 	 * @param image
 	 */
-	void Tracker::LogMask(bool *mask, RgbdImage &image)
+	void Tracker::LogMask(bool *mask, RgbdImage &image, string name)
 	{
 		if (options_.output_mask_video) {
 			cv::Mat output_mask(image.sensor_.rows, image.sensor_.cols, CV_8UC1);
@@ -573,7 +573,7 @@ namespace refusion {
 			}
 
 			cv::cvtColor(output_mask, output_mask, CV_GRAY2BGR);
-			logger_->addFrameToOutputVideo(output_mask, "mask_output.avi");
+			logger_->addFrameToOutputVideo(output_mask, name);
 		}
 	}
 
@@ -746,7 +746,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask, image);
+		LogMask(mask, image, "final-mask");
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -867,7 +867,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask, image);
+		LogMask(mask, image, "final-mask");
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 
@@ -1135,9 +1135,13 @@ namespace refusion {
 				}
 			}
 
+			LogMask(cvmask, image, "pre-closing-mask");
+
 			cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(17, 17));
 			cv::erode(cvmask, cvmask, element);
 			cv::dilate(cvmask, cvmask, element);
+
+			LogMask(cvmask, image, "post-closing-mask");
 
 			queue<tuple<int, int, int>> q;
 			for (int i = 0; i < image.sensor_.rows; i++) {
@@ -1181,6 +1185,8 @@ namespace refusion {
 				}
 			}
 
+			LogMask(cvmask, image, "post-growth-mask");
+
 			for (int i = 0; i < image.sensor_.rows; i++) {
 				for (int j = 0; j < image.sensor_.cols; j++) {
 					mask[i * image.sensor_.cols + j] = cvmask.at<uchar>(i, j) == 255;
@@ -1199,7 +1205,7 @@ namespace refusion {
 		Eigen::Matrix4f posef = pose_.cast<float>();
 		float4x4 pose_cuda = float4x4(posef.data()).getTranspose();
 
-		LogMask(mask, image);
+		LogMask(mask, image, "final-mask");
 
 		volume_->IntegrateScan(image, pose_cuda, mask);
 

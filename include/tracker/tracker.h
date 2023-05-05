@@ -115,7 +115,7 @@ namespace refusion {
 
 	protected:
 		/** Write the mask to the file */
-		void LogMask(bool *mask, RgbdImage &image);
+		void LogMask(bool *mask, RgbdImage &image, string name);
 
 		/** Write the flow to the file */
 		void LogFlowField(cv::Mat &flow, string name);
